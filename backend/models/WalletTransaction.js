@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const walletTransactionSchema = new mongoose.Schema(
@@ -12,7 +11,14 @@ const walletTransactionSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ["deposit", "income", "withdrawal", "hold", "release"],
+      enum: [
+        "deposit",
+        "income",
+        "withdrawal",
+        "hold",
+        "release",
+        "purchase",
+      ],
       required: true,
     },
 
@@ -31,7 +37,13 @@ const walletTransactionSchema = new mongoose.Schema(
 
     sourceType: {
       type: String,
-      enum: ["paymentTransaction", "incomeRecord", "withdrawalRequest", "adminAdjustment"],
+      enum: [
+        "paymentTransaction",
+        "incomeRecord",
+        "withdrawalRequest",
+        "adminAdjustment",
+        "productPurchase",
+      ],
       required: true,
     },
 
@@ -49,13 +61,16 @@ const walletTransactionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Ek source transaction ko dobara credit hone se rokta hai.
 walletTransactionSchema.index(
   { sourceType: 1, sourceId: 1, type: 1 },
   { unique: true }
 );
 
-walletTransactionSchema.index({ user: 1, status: 1, type: 1 });
+walletTransactionSchema.index({
+  user: 1,
+  status: 1,
+  type: 1,
+});
 
 export default mongoose.models.WalletTransaction ||
   mongoose.model("WalletTransaction", walletTransactionSchema);

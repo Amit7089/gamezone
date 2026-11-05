@@ -1,3 +1,4 @@
+
 import WalletTransaction from "../models/WalletTransaction.js";
 import Wallet from "../models/Wallet.js";
 
@@ -29,6 +30,7 @@ export async function getWalletSummary(req, res) {
           break;
 
         case "withdrawal":
+        case "purchase":
           balance -= amount;
           break;
 
@@ -45,12 +47,21 @@ export async function getWalletSummary(req, res) {
       }
     }
 
+    balance = Math.round(balance * 100) / 100;
+    heldAmount = Math.round(heldAmount * 100) / 100;
+    totalIncome = Math.round(totalIncome * 100) / 100;
+
     balance = Math.max(0, balance);
     heldAmount = Math.max(0, heldAmount);
 
-    const availableBalance = Math.max(0, balance - heldAmount);
+    const availableBalance = Math.max(
+      0,
+      Math.round((balance - heldAmount) * 100) / 100
+    );
 
-    const wallet = await Wallet.findOne({ user: userId }).lean();
+    const wallet = await Wallet.findOne({
+      user: userId,
+    }).lean();
 
     return res.json({
       success: true,

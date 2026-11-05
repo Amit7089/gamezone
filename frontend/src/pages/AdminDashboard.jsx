@@ -74,6 +74,7 @@ export default function AdminDashboard({ onLogout }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  // Payment settings
   const [paymentSettings, setPaymentSettings] = useState({
     upiId: "",
     payeeName: "",
@@ -86,17 +87,17 @@ export default function AdminDashboard({ onLogout }) {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
 
-  // QR image upload states
   const [qrFile, setQrFile] = useState(null);
   const [qrUploading, setQrUploading] = useState(false);
 
+  // Transactions
   const [transactions, setTransactions] = useState([]);
   const [transactionStatus, setTransactionStatus] = useState("pending");
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [busyTransaction, setBusyTransaction] = useState("");
   const [notes, setNotes] = useState({});
 
-  // Withdrawal management
+  // Withdrawals
   const [withdrawals, setWithdrawals] = useState([]);
   const [withdrawalStatus, setWithdrawalStatus] = useState("pending");
   const [withdrawalsLoading, setWithdrawalsLoading] = useState(false);
@@ -104,7 +105,19 @@ export default function AdminDashboard({ onLogout }) {
   const [withdrawalNotes, setWithdrawalNotes] = useState({});
   const [payoutReferences, setPayoutReferences] = useState({});
 
-  // Dashboard statistics and users
+  // Wallet adjustment modal
+  const [walletModal, setWalletModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [walletAction, setWalletAction] = useState("add");
+  const [walletAmount, setWalletAmount] = useState("");
+  const [walletReason, setWalletReason] = useState("");
+  const [walletSaving, setWalletSaving] = useState(false);
+  const [walletDetails, setWalletDetails] = useState(null);
+
+  // ========================================
+  // LOAD DASHBOARD AND USERS
+  // ========================================
+
   const loadDashboard = useCallback(async (page = 1, term = "") => {
     setLoading(true);
     setError("");
@@ -138,7 +151,10 @@ export default function AdminDashboard({ onLogout }) {
     }
   }, []);
 
-  // Load payment settings
+  // ========================================
+  // PAYMENT SETTINGS
+  // ========================================
+
   const loadPaymentSettings = useCallback(async () => {
     setSettingsLoading(true);
     setError("");
@@ -162,131 +178,6 @@ export default function AdminDashboard({ onLogout }) {
     }
   }, []);
 
-  // Load payment transactions
-  const loadTransactions = useCallback(async () => {
-    setTransactionsLoading(true);
-    setError("");
-
-    try {
-      const query = new URLSearchParams({
-        page: "1",
-        limit: "50",
-      });
-
-      const data = await adminRequest(
-        `/payments/admin/transactions?${query.toString()}`
-      );
-
-      setTransactions(data.transactions || []);
-    } catch (err) {
-      setError(err.message || "Transactions load nahi hui.");
-    } finally {
-      setTransactionsLoading(false);
-    }
-  }, []);
-
-  // Load withdrawal requests
-  const loadWithdrawals = useCallback(async () => {
-    setWithdrawalsLoading(true);
-    setError("");
-
-    try {
-      const data = await adminRequest("/admin/withdrawals");
-      setWithdrawals(data.withdrawals || []);
-    } catch (err) {
-      setError(err.message || "Withdrawals load nahi hui.");
-    } finally {
-      setWithdrawalsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadDashboard(1, "");
-  }, [loadDashboard]);
-
-  useEffect(() => {
-    if (activeTab === "Payment Settings") {
-      loadPaymentSettings();
-    }
-
-    if (activeTab === "Transactions") {
-      loadTransactions();
-    }
-
-    if (activeTab === "Withdrawals") {
-      loadWithdrawals();
-    }
-  }, [
-    activeTab,
-    loadPaymentSettings,
-    loadTransactions,
-    loadWithdrawals,
-  ]);
-
-  // User search
-  async function handleSearch(event) {
-    event.preventDefault();
-
-    const term = searchInput.trim();
-    setSearch(term);
-
-    await loadDashboard(1, term);
-  }
-
-  // User pagination
-  async function changePage(nextPage) {
-    if (
-      nextPage < 1 ||
-      nextPage > pagination.pages ||
-      loading
-    ) {
-      return;
-    }
-
-    await loadDashboard(nextPage, search);
-  }
-
-  // Activate / deactivate user
-  async function toggleUser(user) {
-    if (user.role === "admin") {
-      setError("Admin account ka status yahan change nahi kar sakte.");
-      return;
-    }
-
-    const nextStatus = !user.isActive;
-
-    const confirmed = window.confirm(
-      `Are you sure you want to ${
-        nextStatus ? "activate" : "deactivate"
-      } ${user.name}?`
-    );
-
-    if (!confirmed) return;
-
-    setBusyUser(user._id);
-    setError("");
-    setNotice("");
-
-    try {
-      const result = await adminRequest(
-        `/admin/users/${user._id}/status`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ isActive: nextStatus }),
-        }
-      );
-
-      setNotice(result.message || "User status updated.");
-
-      await loadDashboard(pagination.page, search);
-    } catch (err) {
-      setError(err.message || "User status update nahi hua.");
-    } finally {
-      setBusyUser("");
-    }
-  }
-
-  // Save UPI / QR settings
   async function savePaymentSettings(event) {
     event.preventDefault();
 
@@ -315,18 +206,13 @@ export default function AdminDashboard({ onLogout }) {
     }
   }
 
-  // Upload QR image to Cloudinary
   async function uploadPaymentQR() {
     if (!qrFile) {
       setError("Pehle QR image select karein.");
       return;
     }
 
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-    ];
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
 
     if (!allowedTypes.includes(qrFile.type)) {
       setError("Sirf JPG, PNG aur WEBP images allowed hain.");
@@ -375,7 +261,32 @@ export default function AdminDashboard({ onLogout }) {
     }
   }
 
-  // Approve / reject transaction
+  // ========================================
+  // LOAD TRANSACTIONS
+  // ========================================
+
+  const loadTransactions = useCallback(async () => {
+    setTransactionsLoading(true);
+    setError("");
+
+    try {
+      const query = new URLSearchParams({
+        page: "1",
+        limit: "50",
+      });
+
+      const data = await adminRequest(
+        `/payments/admin/transactions?${query.toString()}`
+      );
+
+      setTransactions(data.transactions || []);
+    } catch (err) {
+      setError(err.message || "Transactions load nahi hui.");
+    } finally {
+      setTransactionsLoading(false);
+    }
+  }, []);
+
   async function reviewTransaction(transaction, status) {
     if (transaction.status !== "pending") {
       setError("Ye transaction pehle hi review ho chuki hai.");
@@ -416,6 +327,7 @@ export default function AdminDashboard({ onLogout }) {
       setNotice(data.message || `Transaction ${status}.`);
 
       await loadTransactions();
+      await loadDashboard(pagination.page, search);
     } catch (err) {
       setError(err.message || "Transaction review nahi hua.");
     } finally {
@@ -423,7 +335,24 @@ export default function AdminDashboard({ onLogout }) {
     }
   }
 
-  // Approve / reject withdrawal
+  // ========================================
+  // WITHDRAWALS
+  // ========================================
+
+  const loadWithdrawals = useCallback(async () => {
+    setWithdrawalsLoading(true);
+    setError("");
+
+    try {
+      const data = await adminRequest("/admin/withdrawals");
+      setWithdrawals(data.withdrawals || []);
+    } catch (err) {
+      setError(err.message || "Withdrawals load nahi hui.");
+    } finally {
+      setWithdrawalsLoading(false);
+    }
+  }, []);
+
   async function reviewWithdrawalRequest(withdrawal, status) {
     if (withdrawal.status !== "pending") {
       setError("Ye withdrawal pehle hi review ho chuki hai.");
@@ -452,13 +381,17 @@ export default function AdminDashboard({ onLogout }) {
         `/admin/withdrawals/${withdrawal._id}/review`,
         {
           method: "PATCH",
-          body: JSON.stringify({ status, adminNote: note }),
+          body: JSON.stringify({
+            status,
+            adminNote: note,
+          }),
         }
       );
 
       setNotice(data.message || `Withdrawal ${status}.`);
 
       await loadWithdrawals();
+      await loadDashboard(pagination.page, search);
     } catch (err) {
       setError(err.message || "Withdrawal review failed.");
     } finally {
@@ -466,7 +399,6 @@ export default function AdminDashboard({ onLogout }) {
     }
   }
 
-  // Mark withdrawal as paid after actual payout
   async function markWithdrawalAsPaid(withdrawal) {
     const payoutReference = (
       payoutReferences[withdrawal._id] || ""
@@ -501,12 +433,206 @@ export default function AdminDashboard({ onLogout }) {
       setNotice(data.message || "Withdrawal marked as paid.");
 
       await loadWithdrawals();
+      await loadDashboard(pagination.page, search);
     } catch (err) {
       setError(err.message || "Payout update failed.");
     } finally {
       setBusyWithdrawal("");
     }
   }
+
+  // ========================================
+  // USER MANAGEMENT
+  // ========================================
+
+  async function handleSearch(event) {
+    event.preventDefault();
+
+    const term = searchInput.trim();
+    setSearch(term);
+
+    await loadDashboard(1, term);
+  }
+
+  async function changePage(nextPage) {
+    if (
+      nextPage < 1 ||
+      nextPage > pagination.pages ||
+      loading
+    ) {
+      return;
+    }
+
+    await loadDashboard(nextPage, search);
+  }
+
+  async function toggleUser(user) {
+    if (user.role === "admin") {
+      setError("Admin account ka status yahan change nahi kar sakte.");
+      return;
+    }
+
+    const nextStatus = !user.isActive;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to ${nextStatus ? "activate" : "deactivate"} ${user.name}?`
+    );
+
+    if (!confirmed) return;
+
+    setBusyUser(user._id);
+    setError("");
+    setNotice("");
+
+    try {
+      const result = await adminRequest(
+        `/admin/users/${user._id}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ isActive: nextStatus }),
+        }
+      );
+
+      setNotice(result.message || "User status updated.");
+
+      await loadDashboard(pagination.page, search);
+    } catch (err) {
+      setError(err.message || "User status update nahi hua.");
+    } finally {
+      setBusyUser("");
+    }
+  }
+
+  // ========================================
+  // WALLET MANAGEMENT
+  // ========================================
+
+  function openWalletModal(user) {
+    setSelectedUser(user);
+    setWalletAction("add");
+    setWalletAmount("");
+    setWalletReason("");
+    setWalletDetails(user.wallet || null);
+    setWalletModal(true);
+    setError("");
+    setNotice("");
+  }
+
+  function closeWalletModal() {
+    if (walletSaving) return;
+
+    setWalletModal(false);
+    setSelectedUser(null);
+    setWalletDetails(null);
+  }
+
+  async function loadSelectedWallet(userId) {
+    try {
+      const data = await adminRequest(
+        `/admin/users/${userId}/wallet`
+      );
+
+      setWalletDetails(data.wallet || null);
+    } catch (err) {
+      setError(err.message || "Wallet details load nahi hui.");
+    }
+  }
+
+  async function submitWalletAdjustment(event) {
+    event.preventDefault();
+
+    if (!selectedUser) return;
+
+    const amount = Number(walletAmount);
+    const reason = walletReason.trim();
+
+    if (!Number.isSafeInteger(amount) || amount < 1) {
+      setError("Valid amount enter karein. Minimum ₹1.");
+      return;
+    }
+
+    if (reason.length < 3 || reason.length > 500) {
+      setError("Reason 3 se 500 characters ke beech hona chahiye.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `${walletAction === "add" ? "Add" : "Deduct"} ${money(amount)} ${selectedUser.name} ke wallet mein?`
+    );
+
+    if (!confirmed) return;
+
+    setWalletSaving(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const data = await adminRequest(
+        `/admin/users/${selectedUser._id}/wallet`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            action: walletAction,
+            amount,
+            reason,
+          }),
+        }
+      );
+
+      setWalletDetails(data.wallet || null);
+
+      setNotice(data.message || "Wallet balance updated successfully.");
+
+      setWalletAmount("");
+      setWalletReason("");
+
+      // Refresh user list so the new balance appears immediately.
+      await loadDashboard(pagination.page, search);
+    } catch (err) {
+      setError(err.message || "Wallet balance update nahi hua.");
+    } finally {
+      setWalletSaving(false);
+    }
+  }
+
+  // ========================================
+  // INITIAL LOAD AND TAB EFFECTS
+  // ========================================
+
+  useEffect(() => {
+    loadDashboard(1, "");
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    if (activeTab === "Payment Settings") {
+      loadPaymentSettings();
+    }
+
+    if (activeTab === "Transactions") {
+      loadTransactions();
+    }
+
+    if (activeTab === "Withdrawals") {
+      loadWithdrawals();
+    }
+  }, [
+    activeTab,
+    loadPaymentSettings,
+    loadTransactions,
+    loadWithdrawals,
+  ]);
+
+  useEffect(() => {
+    if (walletModal && selectedUser?._id) {
+      loadSelectedWallet(selectedUser._id);
+    }
+    // Load details when a different user is selected.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletModal, selectedUser?._id]);
+
+  // ========================================
+  // FILTERED DATA
+  // ========================================
 
   const filteredTransactions =
     transactionStatus === "all"
@@ -552,6 +678,10 @@ export default function AdminDashboard({ onLogout }) {
       icon: "♙",
     },
   ];
+
+  // ========================================
+  // UI
+  // ========================================
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -662,10 +792,10 @@ export default function AdminDashboard({ onLogout }) {
                 </h2>
 
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                  Yahan se user accounts, UPI payment instructions aur
-                  submitted transaction references manage kar sakte hain.
-                  Approval se pehle apne bank/UPI account mein actual
-                  payment credit verify karein.
+                  Yahan se user accounts, wallet balances, UPI payment
+                  instructions aur submitted transaction references manage
+                  kar sakte hain. Payment approval se pehle actual bank/UPI
+                  credit verify karein.
                 </p>
 
                 <div className="mt-5 flex flex-wrap gap-3">
@@ -674,7 +804,7 @@ export default function AdminDashboard({ onLogout }) {
                     onClick={() => setActiveTab("Users")}
                     className={`${buttonClass} bg-violet-600 hover:bg-violet-500`}
                   >
-                    Manage Users
+                    Manage Users & Wallets
                   </button>
 
                   <button
@@ -702,11 +832,12 @@ export default function AdminDashboard({ onLogout }) {
                 <div className="flex flex-col gap-4 border-b border-white/10 p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="text-xl font-bold">
-                      User Management
+                      User & Wallet Management
                     </h2>
 
                     <p className="mt-1 text-sm text-slate-400">
-                      Search accounts and manage user access.
+                      User accounts, current balance aur available balance
+                      manage karein.
                     </p>
                   </div>
 
@@ -735,14 +866,16 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-left text-sm">
+                  <table className="w-full min-w-[1100px] text-left text-sm">
                     <thead className="bg-slate-950/60 text-slate-400">
                       <tr>
                         <th className="px-5 py-4">User</th>
                         <th className="px-5 py-4">Role</th>
+                        <th className="px-5 py-4">Wallet Balance</th>
+                        <th className="px-5 py-4">Available Balance</th>
                         <th className="px-5 py-4">Status</th>
                         <th className="px-5 py-4">Joined</th>
-                        <th className="px-5 py-4">Action</th>
+                        <th className="px-5 py-4">Actions</th>
                       </tr>
                     </thead>
 
@@ -767,6 +900,24 @@ export default function AdminDashboard({ onLogout }) {
                           </td>
 
                           <td className="px-5 py-4">
+                            <p className="font-bold text-emerald-300">
+                              {money(user.wallet?.balance)}
+                            </p>
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <p className="font-semibold text-blue-300">
+                              {money(user.wallet?.availableBalance)}
+                            </p>
+
+                            {Number(user.wallet?.heldAmount || 0) > 0 && (
+                              <p className="mt-1 text-xs text-amber-300">
+                                Held: {money(user.wallet.heldAmount)}
+                              </p>
+                            )}
+                          </td>
+
+                          <td className="px-5 py-4">
                             <span
                               className={`rounded-full px-3 py-1 text-xs ${
                                 user.isActive
@@ -783,25 +934,42 @@ export default function AdminDashboard({ onLogout }) {
                           </td>
 
                           <td className="px-5 py-4">
-                            <button
-                              type="button"
-                              disabled={
-                                busyUser === user._id ||
-                                user.role === "admin"
-                              }
-                              onClick={() => toggleUser(user)}
-                              className={`${buttonClass} ${
-                                user.isActive
-                                  ? "bg-red-500/10 text-red-300 hover:bg-red-500/20"
-                                  : "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-                              }`}
-                            >
-                              {busyUser === user._id
-                                ? "Saving..."
-                                : user.isActive
-                                  ? "Deactivate"
-                                  : "Activate"}
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              {user.role !== "admin" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openWalletModal(user)}
+                                    className={`${buttonClass} bg-violet-600 px-3 py-2 hover:bg-violet-500`}
+                                  >
+                                    Edit Balance
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={busyUser === user._id}
+                                    onClick={() => toggleUser(user)}
+                                    className={`${buttonClass} px-3 py-2 ${
+                                      user.isActive
+                                        ? "bg-red-500/10 text-red-300 hover:bg-red-500/20"
+                                        : "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                                    }`}
+                                  >
+                                    {busyUser === user._id
+                                      ? "Saving..."
+                                      : user.isActive
+                                        ? "Deactivate"
+                                        : "Activate"}
+                                  </button>
+                                </>
+                              )}
+
+                              {user.role === "admin" && (
+                                <span className="text-xs text-slate-500">
+                                  Admin account
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -809,7 +977,7 @@ export default function AdminDashboard({ onLogout }) {
                       {!loading && users.length === 0 && (
                         <tr>
                           <td
-                            colSpan={5}
+                            colSpan={7}
                             className="px-5 py-12 text-center text-slate-400"
                           >
                             No users found.
@@ -870,8 +1038,7 @@ export default function AdminDashboard({ onLogout }) {
               </h2>
 
               <p className="mt-1 text-sm leading-6 text-slate-400">
-                Ye settings legitimate products/services ke payments ke
-                liye hain.
+                Payment instructions aur QR code manage karein.
               </p>
             </div>
 
@@ -921,15 +1088,13 @@ export default function AdminDashboard({ onLogout }) {
                 </label>
 
                 {/* QR Image Upload */}
-                <div className="md:col-span-2 rounded-2xl border border-white/10 bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/10 bg-slate-950 p-5 md:col-span-2">
                   <h3 className="text-sm font-bold text-white">
                     Upload Payment QR Code
                   </h3>
 
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    PhonePe, Google Pay ya kisi bhi UPI app ka QR image
-                    select karein. JPG, PNG aur WEBP supported hain.
-                    Maximum size 5 MB.
+                    JPG, PNG aur WEBP supported hain. Maximum size 5 MB.
                   </p>
 
                   <input
@@ -1297,10 +1462,7 @@ export default function AdminDashboard({ onLogout }) {
 
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <div className="rounded-xl bg-white/5 p-3">
-                        <p className="text-xs text-slate-400">
-                          Amount
-                        </p>
-
+                        <p className="text-xs text-slate-400">Amount</p>
                         <p className="mt-1 text-2xl font-extrabold">
                           {money(item.amount)}
                         </p>
@@ -1310,7 +1472,6 @@ export default function AdminDashboard({ onLogout }) {
                         <p className="text-xs text-slate-400">
                           Withdrawal method
                         </p>
-
                         <p className="mt-1 font-bold uppercase">
                           {item.method}
                         </p>
@@ -1393,9 +1554,7 @@ export default function AdminDashboard({ onLogout }) {
                             }
                             className={`${buttonClass} bg-red-600 hover:bg-red-500`}
                           >
-                            {busyWithdrawal === item._id
-                              ? "Saving..."
-                              : "Reject"}
+                            Reject
                           </button>
                         </div>
                       </div>
@@ -1448,11 +1607,192 @@ export default function AdminDashboard({ onLogout }) {
           </section>
         )}
 
+        {/* WALLET ADJUSTMENT MODAL */}
+        {walletModal && selectedUser && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                closeWalletModal();
+              }
+            }}
+          >
+            <div className="my-auto w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-5 shadow-2xl sm:p-7">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold tracking-wider text-violet-400">
+                    GAMEZONE / WALLET
+                  </p>
+
+                  <h2 className="mt-2 text-xl font-bold">
+                    Edit User Balance
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-400">
+                    {selectedUser.name}
+                  </p>
+
+                  <p className="text-xs text-slate-500">
+                    {selectedUser.email}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={walletSaving}
+                  onClick={closeWalletModal}
+                  className="rounded-lg px-3 py-2 text-slate-400 hover:bg-white/10 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Current wallet summary */}
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-white/10 bg-slate-950 p-4">
+                  <p className="text-xs text-slate-400">
+                    Wallet Balance
+                  </p>
+
+                  <p className="mt-2 text-xl font-extrabold text-emerald-300">
+                    {money(
+                      walletDetails?.balance ??
+                      selectedUser.wallet?.balance
+                    )}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-slate-950 p-4">
+                  <p className="text-xs text-slate-400">
+                    Available Balance
+                  </p>
+
+                  <p className="mt-2 text-xl font-extrabold text-blue-300">
+                    {money(
+                      walletDetails?.availableBalance ??
+                      selectedUser.wallet?.availableBalance
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <form
+                onSubmit={submitWalletAdjustment}
+                className="mt-6 space-y-4"
+              >
+                <div>
+                  <label className="text-sm font-semibold text-slate-200">
+                    Adjustment Type
+                  </label>
+
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setWalletAction("add")}
+                      className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                        walletAction === "add"
+                          ? "border-emerald-500 bg-emerald-500/15 text-emerald-300"
+                          : "border-white/10 bg-slate-950 text-slate-400"
+                      }`}
+                    >
+                      + Add Balance
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setWalletAction("deduct")}
+                      className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                        walletAction === "deduct"
+                          ? "border-red-500 bg-red-500/15 text-red-300"
+                          : "border-white/10 bg-slate-950 text-slate-400"
+                      }`}
+                    >
+                      − Deduct Balance
+                    </button>
+                  </div>
+                </div>
+
+                <label className="block text-sm font-semibold text-slate-200">
+                  Amount (₹)
+
+                  <input
+                    type="number"
+                    min="1"
+                    max="10000000"
+                    step="1"
+                    required
+                    value={walletAmount}
+                    onChange={(event) =>
+                      setWalletAmount(event.target.value)
+                    }
+                    placeholder="Enter amount"
+                    className={inputClass}
+                  />
+                </label>
+
+                <label className="block text-sm font-semibold text-slate-200">
+                  Reason for adjustment
+
+                  <textarea
+                    required
+                    minLength={3}
+                    maxLength={500}
+                    rows={3}
+                    value={walletReason}
+                    onChange={(event) =>
+                      setWalletReason(event.target.value)
+                    }
+                    placeholder="Enter reason for adding or deducting balance..."
+                    className={inputClass}
+                  />
+                </label>
+
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-200">
+                  {walletAction === "add"
+                    ? "Add karne par user ke wallet mein amount credit hoga."
+                    : "Deduct karne par amount user ke available balance se hi minus hoga. Held withdrawal amount deduct nahi hoga."}
+                  {" "}Adjustment ka record transaction ledger mein save hoga.
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
+                  <button
+                    type="button"
+                    disabled={walletSaving}
+                    onClick={closeWalletModal}
+                    className={`${buttonClass} flex-1 border border-white/10 hover:bg-white/5`}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={
+                      walletSaving ||
+                      !walletAmount ||
+                      !walletReason.trim()
+                    }
+                    className={`${buttonClass} flex-1 ${
+                      walletAction === "add"
+                        ? "bg-emerald-600 hover:bg-emerald-500"
+                        : "bg-red-600 hover:bg-red-500"
+                    }`}
+                  >
+                    {walletSaving
+                      ? "Processing..."
+                      : walletAction === "add"
+                        ? "Confirm Add"
+                        : "Confirm Deduction"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         <p className="mt-6 text-xs leading-6 text-slate-500">
-          Admin permissions backend par validate honi chahiye. Manual
-          payment approval se pehle actual bank/UPI credit verify karein.
-          Client ke bheje hue amount aur order reference ko backend par
-          trusted order details se validate karna bhi zaroori hai.
+          Admin permissions backend par validate honi chahiye. Manual payment
+          approval se pehle actual bank/UPI credit verify karein. Wallet
+          adjustment sirf authorized admin ke through hona chahiye.
         </p>
       </main>
     </div>

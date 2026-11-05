@@ -8,6 +8,8 @@ import {
   getAdminDashboard,
   getAdminUsers,
   updateUserStatus,
+  getAdminUserWallet,
+  adjustUserWallet,
 } from "../controllers/adminController.js";
 
 import {
@@ -28,18 +30,18 @@ router.get("/dashboard", getAdminDashboard);
 router.get("/users", getAdminUsers);
 router.patch("/users/:userId/status", updateUserStatus);
 
-// Withdrawal Management
+// User Wallet Management
+router.get("/users/:userId/wallet", getAdminUserWallet);
+router.patch("/users/:userId/wallet", adjustUserWallet);
 
-// Get all withdrawal requests
+// Withdrawal Management
 router.get("/withdrawals", getAdminWithdrawals);
 
-// Approve or reject withdrawal request
 router.patch(
   "/withdrawals/:id/review",
   reviewWithdrawal
 );
 
-// Mark withdrawal as paid after successful payout
 router.patch(
   "/withdrawals/:id/paid",
   markWithdrawalPaid

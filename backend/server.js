@@ -17,6 +17,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import withdrawalRoutes from "./routes/withdrawalRoutes.js";
 
+// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -24,31 +25,36 @@ const app = express();
 // Hide Express version
 app.disable("x-powered-by");
 
-// ===============================
+// ========================================
 // CORS CONFIGURATION
-// ===============================
+// ========================================
+
+const normalizeOrigin = (url) => {
+  return String(url || "").trim().replace(/\/+$/, "");
+};
 
 const allowedOrigins = [
   "http://localhost:5173",
   ...(process.env.CLIENT_URLS || "")
     .split(",")
-    .map((url) => url.trim().replace(/\/+$/, ""))
+    .map(normalizeOrigin)
     .filter(Boolean),
   ...(process.env.CLIENT_URL
-    ? [process.env.CLIENT_URL.trim().replace(/\/+$/, "")]
+    ? [normalizeOrigin(process.env.CLIENT_URL)]
     : []),
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests without an Origin header
-      // (for example, server-to-server requests)
+      // Allow requests without Origin header
       if (!origin) {
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin.replace(/\/+$/, ""))) {
+      const normalizedOrigin = normalizeOrigin(origin);
+
+      if (allowedOrigins.includes(normalizedOrigin)) {
         return callback(null, true);
       }
 
@@ -62,13 +68,14 @@ app.use(
   })
 );
 
-// Security headers
+// ========================================
+// SECURITY MIDDLEWARE
+// ========================================
+
 app.use(helmet());
 
-// Parse JSON requests
 app.use(express.json({ limit: "10kb" }));
 
-// General API rate limiting
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -78,9 +85,9 @@ app.use(
   })
 );
 
-// ===============================
+// ========================================
 // HOME ROUTE
-// ===============================
+// ========================================
 
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -89,9 +96,9 @@ app.get("/", (req, res) => {
   });
 });
 
-// ===============================
+// ========================================
 // DATABASE HEALTH CHECK
-// ===============================
+// ========================================
 
 app.get("/api/health", (req, res) => {
   const connected = mongoose.connection.readyState === 1;
@@ -105,9 +112,9 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// ===============================
+// ========================================
 // API ROUTES
-// ===============================
+// ========================================
 
 // Authentication
 app.use("/api/auth", authRoutes);
@@ -124,18 +131,22 @@ app.use("/api/admin", adminRoutes);
 // Payments
 app.use("/api/payments", paymentRoutes);
 
-// Wallet
+// Wallet and Product Purchase
 app.use("/api/wallet", walletRoutes);
 
 // Withdrawals
 app.use("/api/withdrawals", withdrawalRoutes);
 
-// ===============================
+// ========================================
 // 404 - UNKNOWN ROUTES
-// ===============================
+// ========================================
 
 app.use((req, res) => {
-  console.log("404 Route Not Found:", req.method, req.originalUrl);
+  console.log(
+    "404 Route Not Found:",
+    req.method,
+    req.originalUrl
+  );
 
   res.status(404).json({
     success: false,
@@ -144,9 +155,9 @@ app.use((req, res) => {
   });
 });
 
-// ===============================
+// ========================================
 // GLOBAL ERROR HANDLER
-// ===============================
+// ========================================
 
 app.use((err, req, res, next) => {
   console.error("Server error:", err);
@@ -171,9 +182,9 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ===============================
+// ========================================
 // START SERVER
-// ===============================
+// ========================================
 
 async function startServer() {
   try {
@@ -187,7 +198,7 @@ async function startServer() {
       console.log("------------------------------------");
 
       console.log(`Server Port: ${PORT}`);
-      console.log(`Health URL: /api/health`);
+      console.log("Health URL: /api/health");
 
       console.log("------------------------------------");
       console.log("ALLOWED FRONTEND ORIGINS");
@@ -201,20 +212,25 @@ async function startServer() {
       console.log("REGISTERED API ROUTES");
       console.log("------------------------------------");
 
-      console.log("Auth:        /api/auth");
-      console.log("Profile:     /api/profile");
-      console.log("Recharge:    /api/recharge");
-      console.log("Admin:       /api/admin");
-      console.log("Payments:    /api/payments");
-      console.log("Wallet:      /api/wallet/summary");
-      console.log("Withdrawals: /api/withdrawals/balance");
-      console.log("Withdrawals: /api/withdrawals/my");
+      console.log("Auth:       /api/auth");
+      console.log("Profile:    /api/profile");
+      console.log("Recharge:   /api/recharge");
+      console.log("Admin:      /api/admin");
+      console.log("Payments:   /api/payments");
+
+      console.log("Wallet:     GET  /api/wallet/summary");
+      console.log("Wallet:     GET  /api/wallet/products");
+      console.log("Wallet:     POST /api/wallet/purchase");
+      console.log("Wallet:     GET  /api/wallet/my-purchases");
+
+      console.log("Withdrawals: GET  /api/withdrawals/balance");
+      console.log("Withdrawals: GET  /api/withdrawals/my");
       console.log("Withdrawals: POST /api/withdrawals");
 
       console.log("------------------------------------");
     });
   } catch (error) {
-    console.error("Unable to start server:", error.message);
+    console.error("Unable to start server:", error);
     process.exit(1);
   }
 }

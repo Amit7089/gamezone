@@ -38,6 +38,7 @@ async function calculateWallet(userId, session = null) {
         break;
 
       case "withdrawal":
+      case "purchase":
         balance -= amount;
         break;
 
