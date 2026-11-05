@@ -9,32 +9,47 @@ import {
   getMyPayments,
   getAdminPayments,
   reviewPayment,
+  uploadQRCode,
 } from "../controllers/paymentController.js";
 
-// Important: your folder name is "middleware" (singular)
 import isAuthenticated from "../middleware/isAuthenticated.js";
 import isAdmin from "../middleware/isAdmin.js";
+import uploadQR from "../middleware/uploadQR.js";
 
 const router = express.Router();
 
-// Public: return enabled payment settings
+// ==========================================
+// PUBLIC ROUTES
+// ==========================================
+
+// Get enabled payment settings
 router.get("/settings", getPaymentSettings);
 
-// Customer: submit a payment record
+
+// ==========================================
+// CUSTOMER ROUTES
+// ==========================================
+
+// Submit payment reference
 router.post(
   "/transactions",
   isAuthenticated,
   submitPayment
 );
 
-// Customer: view their own payment records
+// Get current user's payment history
 router.get(
   "/my-transactions",
   isAuthenticated,
   getMyPayments
 );
 
-// Admin: get payment settings
+
+// ==========================================
+// ADMIN PAYMENT SETTINGS ROUTES
+// ==========================================
+
+// Get payment settings
 router.get(
   "/admin/settings",
   isAuthenticated,
@@ -42,7 +57,7 @@ router.get(
   getAdminPaymentSettings
 );
 
-// Admin: update payment settings
+// Update payment settings
 router.put(
   "/admin/settings",
   isAuthenticated,
@@ -50,7 +65,21 @@ router.put(
   updatePaymentSettings
 );
 
-// Admin: view all payment transactions
+// Upload QR image directly
+router.post(
+  "/admin/upload-qr",
+  isAuthenticated,
+  isAdmin,
+  uploadQR.single("qrImage"),
+  uploadQRCode
+);
+
+
+// ==========================================
+// ADMIN TRANSACTION ROUTES
+// ==========================================
+
+// Get all payment transactions
 router.get(
   "/admin/transactions",
   isAuthenticated,
@@ -58,7 +87,7 @@ router.get(
   getAdminPayments
 );
 
-// Admin: approve or reject a transaction
+// Approve or reject a payment transaction
 router.patch(
   "/admin/transactions/:transactionId/review",
   isAuthenticated,

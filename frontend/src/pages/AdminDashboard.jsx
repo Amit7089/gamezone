@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useState } from "react";
 
 const API_URL = (
@@ -6,11 +7,14 @@ const API_URL = (
 
 async function adminRequest(path, options = {}) {
   const token = sessionStorage.getItem("authToken");
+  const isFormData = options.body instanceof FormData;
 
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && !isFormData
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
@@ -81,6 +85,10 @@ export default function AdminDashboard({ onLogout }) {
 
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+
+  // QR image upload states
+  const [qrFile, setQrFile] = useState(null);
+  const [qrUploading, setQrUploading] = useState(false);
 
   const [transactions, setTransactions] = useState([]);
   const [transactionStatus, setTransactionStatus] = useState("pending");
@@ -184,7 +192,6 @@ export default function AdminDashboard({ onLogout }) {
 
     try {
       const data = await adminRequest("/admin/withdrawals");
-
       setWithdrawals(data.withdrawals || []);
     } catch (err) {
       setError(err.message || "Withdrawals load nahi hui.");
@@ -221,7 +228,6 @@ export default function AdminDashboard({ onLogout }) {
     event.preventDefault();
 
     const term = searchInput.trim();
-
     setSearch(term);
 
     await loadDashboard(1, term);
@@ -309,6 +315,66 @@ export default function AdminDashboard({ onLogout }) {
     }
   }
 
+  // Upload QR image to Cloudinary
+  async function uploadPaymentQR() {
+    if (!qrFile) {
+      setError("Pehle QR image select karein.");
+      return;
+    }
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    if (!allowedTypes.includes(qrFile.type)) {
+      setError("Sirf JPG, PNG aur WEBP images allowed hain.");
+      return;
+    }
+
+    if (qrFile.size > 5 * 1024 * 1024) {
+      setError("Image maximum 5 MB ki honi chahiye.");
+      return;
+    }
+
+    setQrUploading(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const formData = new FormData();
+      formData.append("qrImage", qrFile);
+
+      const data = await adminRequest("/payments/admin/upload-qr", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!data.qrImageUrl) {
+        throw new Error("Server se QR image URL nahi mila.");
+      }
+
+      setPaymentSettings((old) => ({
+        ...old,
+        qrImageUrl: data.qrImageUrl,
+      }));
+
+      setQrFile(null);
+
+      const fileInput = document.getElementById("payment-qr-file");
+      if (fileInput) fileInput.value = "";
+
+      setNotice(
+        "QR image upload ho gayi. Ab Save Payment Settings par click karein."
+      );
+    } catch (err) {
+      setError(err.message || "QR image upload nahi hui.");
+    } finally {
+      setQrUploading(false);
+    }
+  }
+
   // Approve / reject transaction
   async function reviewTransaction(transaction, status) {
     if (transaction.status !== "pending") {
@@ -357,7 +423,7 @@ export default function AdminDashboard({ onLogout }) {
     }
   }
 
-  // Admin: approve or reject a pending withdrawal request.
+  // Approve / reject withdrawal
   async function reviewWithdrawalRequest(withdrawal, status) {
     if (withdrawal.status !== "pending") {
       setError("Ye withdrawal pehle hi review ho chuki hai.");
@@ -400,7 +466,7 @@ export default function AdminDashboard({ onLogout }) {
     }
   }
 
-  // Record payout only after actual bank/UPI transfer succeeds.
+  // Mark withdrawal as paid after actual payout
   async function markWithdrawalAsPaid(withdrawal) {
     const payoutReference = (
       payoutReferences[withdrawal._id] || ""
@@ -442,7 +508,6 @@ export default function AdminDashboard({ onLogout }) {
     }
   }
 
-  // Client-side filtering
   const filteredTransactions =
     transactionStatus === "all"
       ? transactions
@@ -855,44 +920,67 @@ export default function AdminDashboard({ onLogout }) {
                   />
                 </label>
 
-                <label className="block text-sm font-semibold text-slate-200 md:col-span-2">
-                  QR Image URL (optional)
+                {/* QR Image Upload */}
+                <div className="md:col-span-2 rounded-2xl border border-white/10 bg-slate-950 p-5">
+                  <h3 className="text-sm font-bold text-white">
+                    Upload Payment QR Code
+                  </h3>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    PhonePe, Google Pay ya kisi bhi UPI app ka QR image
+                    select karein. JPG, PNG aur WEBP supported hain.
+                    Maximum size 5 MB.
+                  </p>
 
                   <input
-                    type="url"
-                    maxLength={2048}
-                    value={paymentSettings.qrImageUrl}
-                    onChange={(event) =>
-                      setPaymentSettings({
-                        ...paymentSettings,
-                        qrImageUrl: event.target.value,
-                      })
-                    }
-                    placeholder="https://example.com/your-qr.png"
-                    className={inputClass}
+                    id="payment-qr-file"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => {
+                      setQrFile(event.target.files?.[0] || null);
+                      setError("");
+                      setNotice("");
+                    }}
+                    className="mt-4 block w-full rounded-xl border border-white/10 bg-slate-900 p-3 text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-violet-600 file:px-4 file:py-2 file:font-semibold file:text-white"
                   />
 
-                  <span className="mt-1 block text-xs font-normal text-slate-500">
-                    Public HTTPS image URL use karein.
-                  </span>
-                </label>
-
-                {paymentSettings.qrImageUrl && (
-                  <div className="md:col-span-2">
-                    <p className="mb-2 text-sm text-slate-400">
-                      QR preview
+                  {qrFile && (
+                    <p className="mt-2 break-all text-xs text-violet-300">
+                      Selected: {qrFile.name} (
+                      {(qrFile.size / 1024 / 1024).toFixed(2)} MB)
                     </p>
+                  )}
 
-                    <img
-                      src={paymentSettings.qrImageUrl}
-                      alt="UPI QR preview"
-                      className="max-h-64 rounded-xl bg-white p-3"
-                      onError={(event) => {
-                        event.currentTarget.style.display = "none";
-                      }}
-                    />
-                  </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={uploadPaymentQR}
+                    disabled={!qrFile || qrUploading}
+                    className={`${buttonClass} mt-4 bg-violet-600 hover:bg-violet-500`}
+                  >
+                    {qrUploading ? "Uploading QR..." : "Upload QR Image"}
+                  </button>
+
+                  {paymentSettings.qrImageUrl && (
+                    <div className="mt-6 border-t border-white/10 pt-5">
+                      <p className="mb-3 text-sm font-semibold text-slate-300">
+                        Current QR Preview
+                      </p>
+
+                      <img
+                        src={paymentSettings.qrImageUrl}
+                        alt="UPI QR Code preview"
+                        className="max-h-64 rounded-xl bg-white p-3"
+                        onError={(event) => {
+                          event.currentTarget.style.display = "none";
+                        }}
+                      />
+
+                      <p className="mt-3 break-all text-xs text-slate-500">
+                        {paymentSettings.qrImageUrl}
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 <label className="block text-sm font-semibold text-slate-200 md:col-span-2">
                   Payment Instructions
@@ -1084,9 +1172,7 @@ export default function AdminDashboard({ onLogout }) {
                               <div className="flex gap-2">
                                 <button
                                   type="button"
-                                  disabled={
-                                    busyTransaction === tx._id
-                                  }
+                                  disabled={busyTransaction === tx._id}
                                   onClick={() =>
                                     reviewTransaction(tx, "approved")
                                   }
@@ -1099,9 +1185,7 @@ export default function AdminDashboard({ onLogout }) {
 
                                 <button
                                   type="button"
-                                  disabled={
-                                    busyTransaction === tx._id
-                                  }
+                                  disabled={busyTransaction === tx._id}
                                   onClick={() =>
                                     reviewTransaction(tx, "rejected")
                                   }
@@ -1317,7 +1401,7 @@ export default function AdminDashboard({ onLogout }) {
                       </div>
                     )}
 
-                    {/* Approved request: payout still needs to happen */}
+                    {/* Approved request */}
                     {item.status === "approved" && (
                       <div className="mt-4 space-y-3">
                         <p className="text-sm text-blue-300">

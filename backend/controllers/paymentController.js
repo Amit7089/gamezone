@@ -1,4 +1,5 @@
-
+import { Readable } from "node:stream";
+import cloudinary from "../config/cloudinary.js";
 import mongoose from "mongoose";
 
 import PaymentSettings from "../models/PaymentSettings.js";
@@ -354,5 +355,46 @@ export async function reviewPayment(req, res) {
     });
   } finally {
     await session.endSession();
+  }
+}
+
+
+
+export async function uploadQRCode(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "QR image select karein.",
+      });
+    }
+
+    const uploadResult = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: "gamezone/payment-qr",
+          resource_type: "image",
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        }
+      );
+
+      Readable.from(req.file.buffer).pipe(stream);
+    });
+
+    return res.json({
+      success: true,
+      message: "QR image successfully upload ho gayi.",
+      qrImageUrl: uploadResult.secure_url,
+    });
+  } catch (error) {
+    console.error("uploadQRCode:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "QR image upload nahi ho paayi.",
+    });
   }
 }
