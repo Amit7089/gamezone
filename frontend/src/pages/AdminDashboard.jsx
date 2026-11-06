@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from "react";
 
 const API_URL = (
@@ -104,6 +103,17 @@ export default function AdminDashboard({ onLogout }) {
   const [busyWithdrawal, setBusyWithdrawal] = useState("");
   const [withdrawalNotes, setWithdrawalNotes] = useState({});
   const [payoutReferences, setPayoutReferences] = useState({});
+
+  // Product / plan purchase management
+  const [purchases, setPurchases] = useState([]);
+  const [purchasesLoading, setPurchasesLoading] = useState(false);
+  const [purchaseSearchInput, setPurchaseSearchInput] = useState("");
+  const [purchaseSearch, setPurchaseSearch] = useState("");
+  const [purchasePagination, setPurchasePagination] = useState({
+    page: 1,
+    pages: 1,
+    total: 0,
+  });
 
   // Wallet adjustment modal
   const [walletModal, setWalletModal] = useState(false);
@@ -352,6 +362,64 @@ export default function AdminDashboard({ onLogout }) {
       setWithdrawalsLoading(false);
     }
   }, []);
+
+  // ========================================
+  // PURCHASE MANAGEMENT
+  // ========================================
+
+  const loadPurchases = useCallback(async (page = 1, term = "") => {
+    setPurchasesLoading(true);
+    setError("");
+
+    try {
+      const query = new URLSearchParams({
+        page: String(page),
+        limit: "10",
+        search: term,
+      });
+
+      const data = await adminRequest(
+        `/admin/purchases?${query.toString()}`
+      );
+
+      setPurchases(data.purchases || []);
+
+      setPurchasePagination(
+        data.pagination || {
+          page: 1,
+          pages: 1,
+          total: 0,
+        }
+      );
+    } catch (err) {
+      setError(err.message || "Purchases load nahi hui.");
+      setPurchases([]);
+    } finally {
+      setPurchasesLoading(false);
+    }
+  }, []);
+
+  async function handlePurchaseSearch(event) {
+    event.preventDefault();
+
+    const term = purchaseSearchInput.trim();
+
+    setPurchaseSearch(term);
+
+    await loadPurchases(1, term);
+  }
+
+  async function changePurchasePage(nextPage) {
+    if (
+      nextPage < 1 ||
+      nextPage > purchasePagination.pages ||
+      purchasesLoading
+    ) {
+      return;
+    }
+
+    await loadPurchases(nextPage, purchaseSearch);
+  }
 
   async function reviewWithdrawalRequest(withdrawal, status) {
     if (withdrawal.status !== "pending") {
@@ -615,11 +683,17 @@ export default function AdminDashboard({ onLogout }) {
     if (activeTab === "Withdrawals") {
       loadWithdrawals();
     }
+
+    if (activeTab === "Purchases") {
+      loadPurchases(1, purchaseSearch);
+    }
   }, [
     activeTab,
     loadPaymentSettings,
     loadTransactions,
     loadWithdrawals,
+    loadPurchases,
+    purchaseSearch,
   ]);
 
   useEffect(() => {
@@ -654,6 +728,7 @@ export default function AdminDashboard({ onLogout }) {
     "Payment Settings",
     "Transactions",
     "Withdrawals",
+    "Purchases",
   ];
 
   const statCards = [
@@ -1607,6 +1682,224 @@ export default function AdminDashboard({ onLogout }) {
           </section>
         )}
 
+        {/* PURCHASE MANAGEMENT */}
+        {activeTab === "Purchases" && (
+          <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900">
+            <div className="flex flex-col gap-4 border-b border-white/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-bold">
+                  Purchase Management
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-400">
+                  Kis user ne kaunsa product/plan purchase kiya, uski details yahan dekhein.
+                </p>
+
+                <p className="mt-2 text-xs text-violet-300">
+                  Total purchases: {purchasePagination.total || 0}
+                </p>
+              </div>
+
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <form
+                  onSubmit={handlePurchaseSearch}
+                  className="flex min-w-0 gap-2"
+                >
+                  <input
+                    value={purchaseSearchInput}
+                    onChange={(event) =>
+                      setPurchaseSearchInput(event.target.value)
+                    }
+                    maxLength={100}
+                    placeholder="Search user, mobile, product..."
+                    className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-sm outline-none focus:border-violet-500 sm:w-72"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={purchasesLoading}
+                    className={`${buttonClass} bg-violet-600 hover:bg-violet-500`}
+                  >
+                    Search
+                  </button>
+                </form>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    loadPurchases(
+                      purchasePagination.page || 1,
+                      purchaseSearch
+                    )
+                  }
+                  disabled={purchasesLoading}
+                  className={`${buttonClass} border border-white/10 hover:bg-white/5`}
+                >
+                  {purchasesLoading ? "Loading..." : "Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {purchasesLoading ? (
+              <p className="p-10 text-center text-sm text-slate-400">
+                Loading purchases...
+              </p>
+            ) : purchases.length === 0 ? (
+              <p className="p-10 text-center text-sm text-slate-400">
+                Abhi koi purchase record nahi mila.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1050px] text-left text-sm">
+                  <thead className="bg-slate-950/60 text-slate-400">
+                    <tr>
+                      <th className="px-5 py-4">User Details</th>
+                      <th className="px-5 py-4">Purchased Product / Plan</th>
+                      <th className="px-5 py-4">Amount</th>
+                      <th className="px-5 py-4">Purchase Date</th>
+                      <th className="px-5 py-4">Status</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-white/5">
+                    {purchases.map((purchase) => (
+                      <tr
+                        key={purchase._id}
+                        className="align-top hover:bg-white/[0.02]"
+                      >
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-white">
+                            {purchase.user?.name || "Unknown user"}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-400">
+                            {purchase.user?.email || "Email not available"}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-400">
+                            Mobile:{" "}
+                            {purchase.user?.mobileNumber || "Not available"}
+                          </p>
+
+                          <p className="mt-1 break-all text-[11px] text-slate-600">
+                            User ID: {purchase.user?._id || "—"}
+                          </p>
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            {purchase.productImage ? (
+                              <img
+                                src={
+                                  purchase.productImage.startsWith("http")
+                                    ? purchase.productImage
+                                    : `${API_URL.replace(/\/api$/, "")}${purchase.productImage.startsWith("/") ? "" : "/"}${purchase.productImage}`
+                                }
+                                alt={purchase.productName || "Purchased item"}
+                                className="h-14 w-14 rounded-xl border border-white/10 bg-slate-900 object-contain p-1"
+                                onError={(event) => {
+                                  event.currentTarget.style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-white/10 bg-slate-900 text-xl">
+                                🎮
+                              </div>
+                            )}
+
+                            <div>
+                              <p className="font-semibold text-white">
+                                {purchase.productName || "Product"}
+                              </p>
+
+                              <p className="mt-1 text-xs text-slate-500">
+                                Product ID: {purchase.productId || "—"}
+                              </p>
+
+                              <p className="mt-1 text-xs text-slate-500">
+                                Order ID: {purchase._id}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <p className="font-extrabold text-emerald-300">
+                            {money(purchase.price)}
+                          </p>
+                        </td>
+
+                        <td className="px-5 py-4 text-slate-300">
+                          {dateText(
+                            purchase.purchasedAt || purchase.createdAt
+                          )}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${
+                              purchase.status === "purchased"
+                                ? "bg-emerald-500/10 text-emerald-300"
+                                : "bg-red-500/10 text-red-300"
+                            }`}
+                          >
+                            {purchase.status || "—"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 border-t border-white/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-400">
+                {purchasesLoading
+                  ? "Loading purchase records..."
+                  : `Total ${purchasePagination.total || 0} purchases · Page ${
+                      purchasePagination.page || 1
+                    } of ${purchasePagination.pages || 1}`}
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    changePurchasePage(
+                      (purchasePagination.page || 1) - 1
+                    )
+                  }
+                  disabled={
+                    purchasesLoading ||
+                    (purchasePagination.page || 1) <= 1
+                  }
+                  className={`${buttonClass} border border-white/10 hover:bg-white/5`}
+                >
+                  Previous
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    changePurchasePage(
+                      (purchasePagination.page || 1) + 1
+                    )
+                  }
+                  disabled={
+                    purchasesLoading ||
+                    (purchasePagination.page || 1) >=
+                      (purchasePagination.pages || 1)
+                  }
+                  className={`${buttonClass} border border-white/10 hover:bg-white/5`}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* WALLET ADJUSTMENT MODAL */}
         {walletModal && selectedUser && (
           <div
@@ -1657,7 +1950,7 @@ export default function AdminDashboard({ onLogout }) {
                   <p className="mt-2 text-xl font-extrabold text-emerald-300">
                     {money(
                       walletDetails?.balance ??
-                      selectedUser.wallet?.balance
+                        selectedUser.wallet?.balance
                     )}
                   </p>
                 </div>
@@ -1670,7 +1963,7 @@ export default function AdminDashboard({ onLogout }) {
                   <p className="mt-2 text-xl font-extrabold text-blue-300">
                     {money(
                       walletDetails?.availableBalance ??
-                      selectedUser.wallet?.availableBalance
+                        selectedUser.wallet?.availableBalance
                     )}
                   </p>
                 </div>

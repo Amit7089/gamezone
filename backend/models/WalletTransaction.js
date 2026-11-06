@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const walletTransactionSchema = new mongoose.Schema(
@@ -43,6 +44,7 @@ const walletTransactionSchema = new mongoose.Schema(
         "withdrawalRequest",
         "adminAdjustment",
         "productPurchase",
+        "registrationReward",
       ],
       required: true,
     },
@@ -61,6 +63,7 @@ const walletTransactionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Prevent duplicate transactions for the same source and type.
 walletTransactionSchema.index(
   { sourceType: 1, sourceId: 1, type: 1 },
   { unique: true }

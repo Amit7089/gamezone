@@ -3,6 +3,7 @@ import { useState } from "react";
 import { apiRequest } from "../utils/api";
 
 export default function Login({ onSwitch, onLoginSuccess }) {
+  const [loginMethod, setLoginMethod] = useState("mobile");
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("info");
@@ -13,21 +14,52 @@ export default function Login({ onSwitch, onLoginSuccess }) {
 
     setMessage("");
     setMessageType("info");
-    setLoading(true);
 
     const form = new FormData(e.currentTarget);
-    const email = String(form.get("email") || "")
-      .trim()
-      .toLowerCase();
     const password = String(form.get("password") || "");
 
-    try {
-      const result = await apiRequest("/auth/login", {
-        email,
-        password,
-      });
+    const value = String(
+      form.get("loginValue") || ""
+    ).trim();
 
-      // Check API response
+    if (!value || !password) {
+      setMessageType("error");
+      setMessage("Please enter your details and password.");
+      return;
+    }
+
+    let payload = { password };
+
+    if (loginMethod === "mobile") {
+      const mobileNumber = value.replace(/\D/g, "");
+
+      if (!/^[6-9]\d{9}$/.test(mobileNumber)) {
+        setMessageType("error");
+        setMessage("Valid 10 digit mobile number enter karein.");
+        return;
+      }
+
+      payload.mobileNumber = mobileNumber;
+    } else {
+      const email = value.toLowerCase();
+
+      if (
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        email.length > 254
+      ) {
+        setMessageType("error");
+        setMessage("Valid email address enter karein.");
+        return;
+      }
+
+      payload.email = email;
+    }
+
+    setLoading(true);
+
+    try {
+      const result = await apiRequest("/auth/login", payload);
+
       if (!result?.success || !result?.token || !result?.user) {
         throw new Error(
           result?.message || "Server se valid login response nahi mila."
@@ -36,26 +68,17 @@ export default function Login({ onSwitch, onLoginSuccess }) {
 
       const loggedInUser = result.user;
 
-      // Role backend se aana zaroori hai.
-      if (!loggedInUser.id || !loggedInUser.email || !loggedInUser.role) {
-        console.error("Incomplete login user data:", loggedInUser);
-
+      if (!loggedInUser.id || !loggedInUser.role) {
         throw new Error(
           "Login response mein user role missing hai. Backend check karein."
         );
       }
 
-      // Save complete authenticated session
       sessionStorage.setItem("authToken", result.token);
       sessionStorage.setItem(
         "user",
         JSON.stringify(loggedInUser)
       );
-
-      // Debug information
-      console.log("LOGIN API RESPONSE:", result);
-      console.log("LOGIN USER:", loggedInUser);
-      console.log("LOGIN USER ROLE:", loggedInUser.role);
 
       setMessageType("success");
       setMessage(
@@ -64,7 +87,6 @@ export default function Login({ onSwitch, onLoginSuccess }) {
           : "Login successful! Opening your account..."
       );
 
-      // Notify App.jsx
       if (typeof onLoginSuccess === "function") {
         onLoginSuccess(loggedInUser);
       }
@@ -95,31 +117,94 @@ export default function Login({ onSwitch, onLoginSuccess }) {
         </h2>
 
         <p className="mt-2 text-sm text-slate-400">
-          Enter your details to continue.
+          Choose your preferred login method.
         </p>
       </div>
 
-      <div>
-        <label
-          htmlFor="login-email"
-          className="mb-2 block text-sm text-slate-200"
-        >
-          Email address
-        </label>
-
-        <input
-          id="login-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          maxLength={254}
-          placeholder="Enter your email"
-          required
+      {/* Login Method Tabs */}
+      <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-950 p-1">
+        <button
+          type="button"
+          onClick={() => {
+            setLoginMethod("mobile");
+            setMessage("");
+          }}
           disabled={loading}
-          className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-sm outline-none transition placeholder:text-slate-600 focus:border-violet-500 disabled:opacity-60"
-        />
+          className={`rounded-lg px-3 py-3 text-sm font-bold transition ${
+            loginMethod === "mobile"
+              ? "bg-violet-600 text-white shadow-lg"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Mobile Number
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setLoginMethod("email");
+            setMessage("");
+          }}
+          disabled={loading}
+          className={`rounded-lg px-3 py-3 text-sm font-bold transition ${
+            loginMethod === "email"
+              ? "bg-violet-600 text-white shadow-lg"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Email Address
+        </button>
       </div>
 
+      {/* Conditional Login Field */}
+      <div>
+        <label
+          htmlFor="login-value"
+          className="mb-2 block text-sm text-slate-200"
+        >
+          {loginMethod === "mobile"
+            ? "Mobile Number"
+            : "Email Address"}
+        </label>
+
+        {loginMethod === "mobile" ? (
+          <div className="flex overflow-hidden rounded-xl border border-white/10 bg-slate-950 focus-within:border-violet-500">
+            <span className="flex items-center border-r border-white/10 px-4 text-sm text-slate-400">
+              +91
+            </span>
+
+            <input
+              key="mobile"
+              id="login-value"
+              name="loginValue"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel-national"
+              pattern="[6-9][0-9]{9}"
+              maxLength={10}
+              placeholder="Enter 10 digit number"
+              required
+              disabled={loading}
+              className="w-full bg-transparent px-4 py-3 text-sm outline-none placeholder:text-slate-600"
+            />
+          </div>
+        ) : (
+          <input
+            key="email"
+            id="login-value"
+            name="loginValue"
+            type="email"
+            autoComplete="email"
+            maxLength={254}
+            placeholder="Enter your email address"
+            required
+            disabled={loading}
+            className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-sm outline-none placeholder:text-slate-600 focus:border-violet-500"
+          />
+        )}
+      </div>
+
+      {/* Password */}
       <div>
         <label
           htmlFor="login-password"
@@ -137,7 +222,7 @@ export default function Login({ onSwitch, onLoginSuccess }) {
             placeholder="Enter your password"
             required
             disabled={loading}
-            className="min-w-0 flex-1 rounded-xl bg-transparent px-4 py-3 text-sm outline-none placeholder:text-slate-600 disabled:opacity-60"
+            className="min-w-0 flex-1 rounded-xl bg-transparent px-4 py-3 text-sm outline-none placeholder:text-slate-600"
           />
 
           <button
@@ -146,7 +231,7 @@ export default function Login({ onSwitch, onLoginSuccess }) {
               setShowPassword((previous) => !previous)
             }
             disabled={loading}
-            className="px-3 text-xs font-bold text-violet-400 disabled:opacity-60"
+            className="px-3 text-xs font-bold text-violet-400"
           >
             {showPassword ? "HIDE" : "SHOW"}
           </button>
@@ -172,9 +257,7 @@ export default function Login({ onSwitch, onLoginSuccess }) {
           className={`rounded-lg p-3 text-xs leading-5 ${
             messageType === "error"
               ? "bg-red-500/10 text-red-300"
-              : messageType === "success"
-                ? "bg-green-500/10 text-green-300"
-                : "bg-violet-500/10 text-violet-200"
+              : "bg-green-500/10 text-green-300"
           }`}
         >
           {message}
@@ -183,12 +266,11 @@ export default function Login({ onSwitch, onLoginSuccess }) {
 
       <p className="text-center text-sm text-slate-400">
         Don't have an account?{" "}
-
         <button
           type="button"
           onClick={onSwitch}
           disabled={loading}
-          className="font-bold text-violet-400 hover:text-violet-300 disabled:opacity-60"
+          className="font-bold text-violet-400 hover:text-violet-300"
         >
           Register
         </button>

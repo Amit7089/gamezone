@@ -16,13 +16,13 @@ import adminRoutes from "./routes/adminRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import withdrawalRoutes from "./routes/withdrawalRoutes.js";
+import referralRoutes from "./routes/referralRoutes.js";
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 
-// Hide Express version
 app.disable("x-powered-by");
 
 // ========================================
@@ -47,7 +47,6 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests without Origin header
       if (!origin) {
         return callback(null, true);
       }
@@ -59,7 +58,6 @@ app.use(
       }
 
       console.log("CORS blocked origin:", origin);
-
       return callback(new Error("Origin not allowed by CORS"));
     },
     credentials: true,
@@ -116,26 +114,22 @@ app.get("/api/health", (req, res) => {
 // API ROUTES
 // ========================================
 
-// Authentication
 app.use("/api/auth", authRoutes);
 
-// User Profile
 app.use("/api/profile", profileRoutes);
 
-// Recharge
 app.use("/api/recharge", rechargeRoutes);
 
-// Admin
 app.use("/api/admin", adminRoutes);
 
-// Payments
 app.use("/api/payments", paymentRoutes);
 
-// Wallet and Product Purchase
 app.use("/api/wallet", walletRoutes);
 
-// Withdrawals
 app.use("/api/withdrawals", withdrawalRoutes);
+
+// Referral system
+app.use("/api/referrals", referralRoutes);
 
 // ========================================
 // 404 - UNKNOWN ROUTES
@@ -201,31 +195,17 @@ async function startServer() {
       console.log("Health URL: /api/health");
 
       console.log("------------------------------------");
-      console.log("ALLOWED FRONTEND ORIGINS");
-      console.log("------------------------------------");
-
-      allowedOrigins.forEach((origin) => {
-        console.log(origin);
-      });
-
-      console.log("------------------------------------");
       console.log("REGISTERED API ROUTES");
       console.log("------------------------------------");
 
-      console.log("Auth:       /api/auth");
-      console.log("Profile:    /api/profile");
-      console.log("Recharge:   /api/recharge");
-      console.log("Admin:      /api/admin");
-      console.log("Payments:   /api/payments");
-
-      console.log("Wallet:     GET  /api/wallet/summary");
-      console.log("Wallet:     GET  /api/wallet/products");
-      console.log("Wallet:     POST /api/wallet/purchase");
-      console.log("Wallet:     GET  /api/wallet/my-purchases");
-
-      console.log("Withdrawals: GET  /api/withdrawals/balance");
-      console.log("Withdrawals: GET  /api/withdrawals/my");
-      console.log("Withdrawals: POST /api/withdrawals");
+      console.log("Auth:        /api/auth");
+      console.log("Profile:     /api/profile");
+      console.log("Recharge:    /api/recharge");
+      console.log("Admin:       /api/admin");
+      console.log("Payments:    /api/payments");
+      console.log("Wallet:      /api/wallet");
+      console.log("Withdrawals: /api/withdrawals");
+      console.log("Referrals:   /api/referrals");
 
       console.log("------------------------------------");
     });

@@ -1,8 +1,22 @@
 
 import mongoose from "mongoose";
+
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import WalletTransaction from "../models/WalletTransaction.js";
+import ProductPurchase from "../models/ProductPurchase.js";
+
+// ========================================
+// HELPER: ESCAPE REGEX
+// ========================================
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
 
 // ========================================
 // WALLET LEDGER CALCULATION
@@ -55,9 +69,9 @@ async function calculateUserWallet(userId, session = null) {
     }
   }
 
-  balance = Math.round(balance * 100) / 100;
-  heldAmount = Math.round(heldAmount * 100) / 100;
-  totalIncome = Math.round(totalIncome * 100) / 100;
+  balance = roundMoney(balance);
+  heldAmount = roundMoney(heldAmount);
+  totalIncome = roundMoney(totalIncome);
 
   return {
     balance: Math.max(0, balance),
@@ -152,17 +166,18 @@ export async function getAdminUsers(req, res, next) {
     const filter = {};
 
     if (search) {
-      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escaped = escapeRegex(search);
 
       filter.$or = [
         { name: { $regex: escaped, $options: "i" } },
         { email: { $regex: escaped, $options: "i" } },
+        { mobileNumber: { $regex: escaped, $options: "i" } },
       ];
     }
 
     const [users, total] = await Promise.all([
       User.find(filter)
-        .select("_id name email role isActive createdAt")
+        .select("_id name email mobileNumber role isActive createdAt")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -171,7 +186,6 @@ export async function getAdminUsers(req, res, next) {
       User.countDocuments(filter),
     ]);
 
-    // Calculate wallet information from posted ledger entries.
     const userIds = users.map((user) => user._id);
 
     const transactions = userIds.length
@@ -193,8 +207,7 @@ export async function getAdminUsers(req, res, next) {
     }
 
     for (const tx of transactions) {
-      const key = String(tx.user);
-      const wallet = walletMap.get(key);
+      const wallet = walletMap.get(String(tx.user));
 
       if (!wallet) continue;
 
@@ -231,15 +244,8 @@ export async function getAdminUsers(req, res, next) {
     const formattedUsers = users.map((user) => {
       const wallet = walletMap.get(String(user._id));
 
-      const balance = Math.max(
-        0,
-        Math.round(wallet.balance * 100) / 100
-      );
-
-      const heldAmount = Math.max(
-        0,
-        Math.round(wallet.heldAmount * 100) / 100
-      );
+      const balance = Math.max(0, roundMoney(wallet.balance));
+      const heldAmount = Math.max(0, roundMoney(wallet.heldAmount));
 
       return {
         ...user,
@@ -248,11 +254,11 @@ export async function getAdminUsers(req, res, next) {
           heldAmount,
           availableBalance: Math.max(
             0,
-            Math.round((balance - heldAmount) * 100) / 100
+            roundMoney(balance - heldAmount)
           ),
           totalIncome: Math.max(
             0,
-            Math.round(wallet.totalIncome * 100) / 100
+            roundMoney(wallet.totalIncome)
           ),
         },
       };
@@ -289,7 +295,7 @@ export async function updateUserStatus(req, res, next) {
       });
     }
 
-    if (!/^[a-f\d]{24}$/i.test(userId)) {
+    if (!mongoose.isValidObjectId(userId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid user ID.",
@@ -324,6 +330,7 @@ export async function updateUserStatus(req, res, next) {
         id: targetUser._id.toString(),
         name: targetUser.name,
         email: targetUser.email,
+        mobileNumber: targetUser.mobileNumber,
         role: targetUser.role,
         isActive: targetUser.isActive,
       },
@@ -349,7 +356,7 @@ export async function getAdminUserWallet(req, res, next) {
     }
 
     const user = await User.findById(userId)
-      .select("_id name email role")
+      .select("_id name email mobileNumber role")
       .lean();
 
     if (!user) {
@@ -437,7 +444,6 @@ export async function adjustUserWallet(req, res, next) {
     let updatedWallet = null;
 
     await session.withTransaction(async () => {
-      // Ensure wallet exists and serialize concurrent adjustments.
       await Wallet.findOneAndUpdate(
         { user: userId },
         {
@@ -514,6 +520,299 @@ export async function adjustUserWallet(req, res, next) {
       });
     }
 
+    next(error);
+  } finally {
+    await session.endSession();
+  }
+}
+
+// ========================================
+// ADMIN: GET ALL PRODUCT PURCHASES
+// ========================================
+
+export async function getAdminPurchases(req, res, next) {
+  try {
+    const page = Math.max(
+      1,
+      Number.parseInt(req.query.page, 10) || 1
+    );
+
+    const limit = Math.min(
+      50,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 10)
+    );
+
+    const search = String(req.query.search || "")
+      .trim()
+      .slice(0, 100);
+
+    // All order statuses are now visible to Admin.
+    const filter = {};
+
+    if (search) {
+      const escaped = escapeRegex(search);
+      const regex = new RegExp(escaped, "i");
+
+      const matchingUsers = await User.find({
+        $or: [
+          { name: regex },
+          { email: regex },
+          { mobileNumber: regex },
+        ],
+      })
+        .select("_id")
+        .lean();
+
+      const matchingUserIds = matchingUsers.map(
+        (user) => user._id
+      );
+
+      const searchConditions = [
+        { productName: regex },
+        { productId: regex },
+      ];
+
+      if (mongoose.isValidObjectId(search)) {
+        searchConditions.push({
+          _id: new mongoose.Types.ObjectId(search),
+        });
+      }
+
+      if (matchingUserIds.length > 0) {
+        searchConditions.push({
+          user: { $in: matchingUserIds },
+        });
+      }
+
+      filter.$or = searchConditions;
+    }
+
+    const [purchases, total] = await Promise.all([
+      ProductPurchase.find(filter)
+        .populate({
+          path: "user",
+          select: "name email mobileNumber role",
+        })
+        .populate({
+          path: "referralCommission.referrer",
+          select: "name email mobileNumber role",
+        })
+        .sort({ purchasedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+
+      ProductPurchase.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      purchases,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("getAdminPurchases:", error);
+    next(error);
+  }
+}
+
+// ========================================
+// ADMIN: UPDATE PRODUCT PURCHASE STATUS
+// REFERRER GETS 4% AFTER DELIVERY
+// ========================================
+
+export async function updatePurchaseStatus(req, res, next) {
+  const session = await mongoose.startSession();
+
+  try {
+    const { purchaseId } = req.params;
+    const { status } = req.body;
+
+    const allowedStatuses = [
+      "processing",
+      "shipped",
+      "delivered",
+      "cancelled",
+    ];
+
+    if (!mongoose.isValidObjectId(purchaseId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid purchase ID.",
+      });
+    }
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid purchase status.",
+      });
+    }
+
+    let updatedPurchase = null;
+    let commissionCredited = false;
+    let commissionAmount = 0;
+
+    await session.withTransaction(async () => {
+      const purchase = await ProductPurchase.findById(purchaseId)
+        .session(session);
+
+      if (!purchase) {
+        const error = new Error("PURCHASE_NOT_FOUND");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      if (purchase.status === "cancelled") {
+        const error = new Error("PURCHASE_ALREADY_CANCELLED");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (purchase.status === "delivered" && status !== "delivered") {
+        const error = new Error("PURCHASE_ALREADY_DELIVERED");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Cancelled orders do not earn pending referral commission.
+      if (status === "cancelled") {
+        if (purchase.status === "delivered") {
+          const error = new Error("DELIVERED_ORDER_CANNOT_BE_CANCELLED");
+          error.statusCode = 400;
+          throw error;
+        }
+
+        purchase.status = "cancelled";
+
+        if (purchase.referralCommission?.status === "pending") {
+          purchase.referralCommission.status = "not_applicable";
+        }
+
+        await purchase.save({ session });
+
+        updatedPurchase = purchase;
+        return;
+      }
+
+      purchase.status = status;
+
+      // Referral commission is credited only on delivery.
+      if (
+        status === "delivered" &&
+        purchase.referralCommission?.status === "pending" &&
+        purchase.referralCommission?.referrer &&
+        Number(purchase.referralCommission?.amount) > 0
+      ) {
+        const referrerId = purchase.referralCommission.referrer;
+
+        commissionAmount = roundMoney(
+          purchase.referralCommission.amount
+        );
+
+        const referrer = await User.findById(referrerId)
+          .select("_id role")
+          .session(session)
+          .lean();
+
+        if (referrer && referrer.role === "user") {
+          // Ensure referrer wallet exists.
+          await Wallet.findOneAndUpdate(
+            { user: referrerId },
+            {
+              $setOnInsert: { user: referrerId },
+              $inc: { balance: 0 },
+            },
+            {
+              upsert: true,
+              session,
+              setDefaultsOnInsert: true,
+            }
+          );
+
+          // Unique WalletTransaction index protects against duplicates.
+          const [commissionTransaction] =
+            await WalletTransaction.create(
+              [
+                {
+                  user: referrerId,
+                  type: "income",
+                  amount: commissionAmount,
+                  status: "posted",
+                  sourceType: "productPurchase",
+                  sourceId: String(purchase._id),
+                  description: `4% referral commission for delivered product: ${purchase.productName}`,
+                },
+              ],
+              { session }
+            );
+
+          purchase.referralCommission.status = "credited";
+          purchase.referralCommission.creditedAt = new Date();
+          purchase.referralCommission.walletTransactionId =
+            commissionTransaction._id;
+
+          await syncUserWallet(referrerId, session);
+
+          commissionCredited = true;
+        } else {
+          purchase.referralCommission.status = "not_applicable";
+        }
+      }
+
+      if (status === "delivered") {
+        purchase.deliveredAt = new Date();
+      }
+
+      await purchase.save({ session });
+
+      updatedPurchase = purchase;
+    });
+
+    return res.json({
+      success: true,
+      message: commissionCredited
+        ? "Order delivered and 4% referral commission credited successfully."
+        : status === "delivered"
+          ? "Order delivered successfully. No pending referral commission."
+          : status === "cancelled"
+            ? "Order cancelled successfully."
+            : "Purchase status updated successfully.",
+      purchase: updatedPurchase,
+      commission: {
+        credited: commissionCredited,
+        amount: commissionCredited ? commissionAmount : 0,
+      },
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Commission transaction already exists. Please check the purchase record.",
+      });
+    }
+
+    if (error.statusCode) {
+      const messages = {
+        PURCHASE_NOT_FOUND: "Purchase not found.",
+        PURCHASE_ALREADY_CANCELLED: "This purchase is already cancelled.",
+        PURCHASE_ALREADY_DELIVERED: "This purchase is already delivered.",
+        DELIVERED_ORDER_CANNOT_BE_CANCELLED:
+          "Delivered order cannot be cancelled through this action.",
+      };
+
+      return res.status(error.statusCode).json({
+        success: false,
+        message: messages[error.message] || "Invalid purchase status.",
+      });
+    }
+
+    console.error("updatePurchaseStatus:", error);
     next(error);
   } finally {
     await session.endSession();

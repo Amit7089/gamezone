@@ -4,6 +4,9 @@ import WithdrawalRequest from "../models/WithdrawalRequest.js";
 import WalletTransaction from "../models/WalletTransaction.js";
 import Wallet from "../models/Wallet.js";
 
+// Minimum withdrawal amount
+const MIN_WITHDRAWAL_AMOUNT = 350;
+
 // ========================================
 // CALCULATE WALLET FROM POSTED TRANSACTIONS
 // ========================================
@@ -126,12 +129,24 @@ export async function createWithdrawal(req, res) {
   try {
     const { amount, method, accountDetails } = req.body;
 
+    // MINIMUM WITHDRAWAL VALIDATION
     if (
       !Number.isSafeInteger(amount) ||
-      amount < 1 ||
+      amount < MIN_WITHDRAWAL_AMOUNT
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum withdrawal amount ₹${MIN_WITHDRAWAL_AMOUNT} hai.`,
+        minimumWithdrawal: MIN_WITHDRAWAL_AMOUNT,
+      });
+    }
+
+    // BASIC VALIDATION
+    if (
       !["upi", "bank"].includes(method) ||
       !accountDetails ||
-      typeof accountDetails !== "object"
+      typeof accountDetails !== "object" ||
+      Array.isArray(accountDetails)
     ) {
       return res.status(400).json({
         success: false,
@@ -139,6 +154,7 @@ export async function createWithdrawal(req, res) {
       });
     }
 
+    // ACCOUNT HOLDER NAME
     const holderName = String(
       accountDetails.accountHolderName || ""
     ).trim();
@@ -158,6 +174,7 @@ export async function createWithdrawal(req, res) {
       bankName: "",
     };
 
+    // UPI VALIDATION
     if (method === "upi") {
       const id = String(accountDetails.upiId || "")
         .trim()
@@ -173,6 +190,7 @@ export async function createWithdrawal(req, res) {
       details.upiId = id;
     }
 
+    // BANK VALIDATION
     if (method === "bank") {
       const number = String(
         accountDetails.accountNumber || ""
@@ -180,7 +198,9 @@ export async function createWithdrawal(req, res) {
 
       const ifsc = String(
         accountDetails.ifscCode || ""
-      ).trim().toUpperCase();
+      )
+        .trim()
+        .toUpperCase();
 
       const bank = String(
         accountDetails.bankName || ""
@@ -208,14 +228,17 @@ export async function createWithdrawal(req, res) {
     await session.withTransaction(async () => {
       const summary = await calculateWallet(req.user._id, session);
 
+      // CHECK AVAILABLE BALANCE
       if (amount > summary.availableBalance) {
         const error = new Error(
           "Insufficient available wallet balance."
         );
+
         error.statusCode = 400;
         throw error;
       }
 
+      // CREATE WITHDRAWAL REQUEST
       const [request] = await WithdrawalRequest.create(
         [
           {
@@ -232,7 +255,7 @@ export async function createWithdrawal(req, res) {
         }
       );
 
-      // Reserve amount until rejection or completed payout.
+      // RESERVE AMOUNT UNTIL REJECTION OR COMPLETED PAYOUT
       await WalletTransaction.create(
         [
           {
@@ -383,10 +406,12 @@ export async function reviewWithdrawal(req, res) {
         const error = new Error(
           "Request nahi mili ya pehle review ho chuki hai."
         );
+
         error.statusCode = 409;
         throw error;
       }
 
+      // REJECTED: RELEASE RESERVED AMOUNT
       if (status === "rejected") {
         await WalletTransaction.create(
           [
@@ -424,8 +449,7 @@ export async function reviewWithdrawal(req, res) {
     if (error.statusCode === 409 || error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message:
-          error.message || "Withdrawal already reviewed.",
+        message: error.message || "Withdrawal already reviewed.",
       });
     }
 
@@ -489,11 +513,12 @@ export async function markWithdrawalPaid(req, res) {
         const error = new Error(
           "Approved withdrawal request nahi mili."
         );
+
         error.statusCode = 409;
         throw error;
       }
 
-      // Debit withdrawal and release its reserved amount.
+      // DEBIT WITHDRAWAL AND RELEASE RESERVED AMOUNT
       await WalletTransaction.create(
         [
           {

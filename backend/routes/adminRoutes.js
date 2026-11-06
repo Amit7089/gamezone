@@ -10,6 +10,8 @@ import {
   updateUserStatus,
   getAdminUserWallet,
   adjustUserWallet,
+  getAdminPurchases,
+  updatePurchaseStatus,
 } from "../controllers/adminController.js";
 
 import {
@@ -23,19 +25,61 @@ const router = express.Router();
 // All admin routes require authentication and admin role.
 router.use(authMiddleware, adminMiddleware);
 
-// Dashboard
+// ========================================
+// ADMIN DASHBOARD
+// ========================================
+
 router.get("/dashboard", getAdminDashboard);
 
-// User Management
+// ========================================
+// USER MANAGEMENT
+// ========================================
+
 router.get("/users", getAdminUsers);
-router.patch("/users/:userId/status", updateUserStatus);
 
-// User Wallet Management
-router.get("/users/:userId/wallet", getAdminUserWallet);
-router.patch("/users/:userId/wallet", adjustUserWallet);
+router.patch(
+  "/users/:userId/status",
+  updateUserStatus
+);
 
-// Withdrawal Management
-router.get("/withdrawals", getAdminWithdrawals);
+// ========================================
+// USER WALLET MANAGEMENT
+// ========================================
+
+router.get(
+  "/users/:userId/wallet",
+  getAdminUserWallet
+);
+
+router.patch(
+  "/users/:userId/wallet",
+  adjustUserWallet
+);
+
+// ========================================
+// PRODUCT PURCHASE MANAGEMENT
+// ========================================
+
+router.get(
+  "/purchases",
+  getAdminPurchases
+);
+
+// Update purchase status and credit referral commission
+// Commission is credited only when status becomes delivered.
+router.patch(
+  "/purchases/:purchaseId/status",
+  updatePurchaseStatus
+);
+
+// ========================================
+// WITHDRAWAL MANAGEMENT
+// ========================================
+
+router.get(
+  "/withdrawals",
+  getAdminWithdrawals
+);
 
 router.patch(
   "/withdrawals/:id/review",

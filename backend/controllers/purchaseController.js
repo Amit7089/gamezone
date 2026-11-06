@@ -1,11 +1,16 @@
+
 import mongoose from "mongoose";
 
 import WalletTransaction from "../models/WalletTransaction.js";
 import ProductPurchase from "../models/ProductPurchase.js";
 import Wallet from "../models/Wallet.js";
+import User from "../models/User.js";
 
-// Backend-controlled product catalog.
-// Frontend se bheji gayi price kabhi trust nahi hogi.
+// ========================================
+// PRODUCT CATALOG
+// Backend-controlled prices
+// ========================================
+
 const PRODUCTS = [
   {
     id: "1",
@@ -26,6 +31,18 @@ const PRODUCTS = [
     price: 450,
   },
 ];
+
+const REFERRAL_COMMISSION_RATE = 4;
+
+function roundMoney(value) {
+  return Math.round(
+    (Number(value) + Number.EPSILON) * 100
+  ) / 100;
+}
+
+// ========================================
+// CALCULATE AVAILABLE WALLET BALANCE
+// ========================================
 
 async function calculateAvailableBalance(userId, session) {
   const transactions = await WalletTransaction.find({
@@ -65,11 +82,18 @@ async function calculateAvailableBalance(userId, session) {
     }
   }
 
-  balance = Math.round(balance * 100) / 100;
-  heldAmount = Math.round(heldAmount * 100) / 100;
+  balance = roundMoney(balance);
+  heldAmount = roundMoney(heldAmount);
 
-  return Math.max(0, balance - Math.max(0, heldAmount));
+  return Math.max(
+    0,
+    balance - Math.max(0, heldAmount)
+  );
 }
+
+// ========================================
+// SYNC WALLET FROM LEDGER
+// ========================================
 
 async function syncWallet(userId, session) {
   const transactions = await WalletTransaction.find({
@@ -108,19 +132,26 @@ async function syncWallet(userId, session) {
       case "release":
         heldAmount -= amount;
         break;
+
+      default:
+        break;
     }
   }
 
-  balance = Math.max(0, Math.round(balance * 100) / 100);
-  heldAmount = Math.max(0, Math.round(heldAmount * 100) / 100);
+  balance = Math.max(0, roundMoney(balance));
+  heldAmount = Math.max(0, roundMoney(heldAmount));
+  totalIncome = Math.max(0, roundMoney(totalIncome));
 
   await Wallet.findOneAndUpdate(
     { user: userId },
     {
       $set: {
         balance,
-        availableBalance: Math.max(0, balance - heldAmount),
-        totalIncome: Math.max(0, totalIncome),
+        availableBalance: Math.max(
+          0,
+          roundMoney(balance - heldAmount)
+        ),
+        totalIncome,
       },
     },
     {
@@ -132,7 +163,11 @@ async function syncWallet(userId, session) {
   );
 }
 
+// ========================================
+// GET AVAILABLE PRODUCTS
 // GET /api/wallet/products
+// ========================================
+
 export async function getAvailableProducts(req, res) {
   return res.json({
     success: true,
@@ -140,7 +175,11 @@ export async function getAvailableProducts(req, res) {
   });
 }
 
+// ========================================
+// PURCHASE PRODUCT + REFERRAL COMMISSION
 // POST /api/wallet/purchase
+// ========================================
+
 export async function purchaseProduct(req, res) {
   const session = await mongoose.startSession();
 
@@ -158,7 +197,9 @@ export async function purchaseProduct(req, res) {
       });
     }
 
-    const product = PRODUCTS.find((item) => item.id === productId);
+    const product = PRODUCTS.find(
+      (item) => item.id === productId
+    );
 
     if (!product) {
       return res.status(404).json({
@@ -170,7 +211,10 @@ export async function purchaseProduct(req, res) {
     let result = null;
 
     await session.withTransaction(async () => {
-      // Duplicate request protection
+      // ========================================
+      // DUPLICATE REQUEST PROTECTION
+      // ========================================
+
       const existing = await ProductPurchase.findOne({
         user: req.user._id,
         requestId,
@@ -184,9 +228,18 @@ export async function purchaseProduct(req, res) {
             session
           ),
           duplicate: true,
+          commission: {
+            credited: false,
+            amount: 0,
+          },
         };
+
         return;
       }
+
+      // ========================================
+      // CHECK BUYER BALANCE
+      // ========================================
 
       const availableBalance = await calculateAvailableBalance(
         req.user._id,
@@ -195,11 +248,61 @@ export async function purchaseProduct(req, res) {
 
       if (availableBalance < product.price) {
         const error = new Error("INSUFFICIENT_BALANCE");
+
         error.statusCode = 400;
         error.availableBalance = availableBalance;
         error.requiredAmount = product.price;
+
         throw error;
       }
+
+      // ========================================
+      // FIND BUYER REFERRER
+      // ========================================
+
+      const buyer = await User.findById(req.user._id)
+        .select("referredBy")
+        .session(session)
+        .lean();
+
+      let referrer = null;
+      let commissionAmount = 0;
+
+      if (
+        buyer?.referredBy &&
+        String(buyer.referredBy) !== String(req.user._id)
+      ) {
+        referrer = await User.findOne({
+          _id: buyer.referredBy,
+          role: "user",
+        })
+          .select("_id")
+          .session(session)
+          .lean();
+
+        if (referrer) {
+          commissionAmount = roundMoney(
+            (product.price * REFERRAL_COMMISSION_RATE) / 100
+          );
+        }
+      }
+
+      // ========================================
+      // CREATE PURCHASE RECORD
+      // ========================================
+
+      const referralCommission = {
+        referrer: referrer ? referrer._id : null,
+        rate: REFERRAL_COMMISSION_RATE,
+        amount: commissionAmount,
+        status: commissionAmount > 0
+          ? "credited"
+          : "not_applicable",
+        creditedAt: commissionAmount > 0
+          ? new Date()
+          : null,
+        walletTransactionId: null,
+      };
 
       const [purchase] = await ProductPurchase.create(
         [
@@ -211,10 +314,15 @@ export async function purchaseProduct(req, res) {
             price: product.price,
             requestId,
             status: "purchased",
+            referralCommission,
           },
         ],
         { session }
       );
+
+      // ========================================
+      // DEBIT BUYER WALLET
+      // ========================================
 
       await WalletTransaction.create(
         [
@@ -231,22 +339,94 @@ export async function purchaseProduct(req, res) {
         { session }
       );
 
+      // ========================================
+      // CREDIT REFERRER 4% COMMISSION
+      // ========================================
+
+      let commissionCredited = false;
+
+      if (referrer && commissionAmount > 0) {
+        // Ensure referrer wallet exists.
+        await Wallet.findOneAndUpdate(
+          { user: referrer._id },
+          {
+            $setOnInsert: {
+              user: referrer._id,
+            },
+            $inc: {
+              balance: 0,
+            },
+          },
+          {
+            upsert: true,
+            session,
+            setDefaultsOnInsert: true,
+          }
+        );
+
+        // Create referral income transaction.
+        const [commissionTransaction] =
+          await WalletTransaction.create(
+            [
+              {
+                user: referrer._id,
+                type: "income",
+                amount: commissionAmount,
+                status: "posted",
+                sourceType: "productPurchase",
+                sourceId: String(purchase._id),
+                description: `4% referral commission for product purchase: ${product.name}`,
+              },
+            ],
+            { session }
+          );
+
+        // Save commission transaction reference.
+        purchase.referralCommission.walletTransactionId =
+          commissionTransaction._id;
+
+        await purchase.save({ session });
+
+        // Update referrer's wallet from ledger.
+        await syncWallet(referrer._id, session);
+
+        commissionCredited = true;
+      }
+
+      // ========================================
+      // SYNC BUYER WALLET
+      // ========================================
+
       await syncWallet(req.user._id, session);
+
+      const updatedBalance = roundMoney(
+        availableBalance - product.price
+      );
 
       result = {
         purchase,
-        availableBalance: availableBalance - product.price,
+        availableBalance: updatedBalance,
         duplicate: false,
+        commission: {
+          credited: commissionCredited,
+          amount: commissionCredited
+            ? commissionAmount
+            : 0,
+        },
       };
     });
 
     return res.status(result.duplicate ? 200 : 201).json({
       success: true,
+
       message: result.duplicate
         ? "Purchase pehle hi complete ho chuki hai."
         : "Product successfully purchase ho gaya.",
+
       purchase: result.purchase,
       availableBalance: result.availableBalance,
+
+      referralCommission: result.commission,
     });
   } catch (error) {
     if (error.statusCode === 400) {
@@ -255,8 +435,9 @@ export async function purchaseProduct(req, res) {
         message: "Wallet balance sufficient nahi hai.",
         requiredAmount: error.requiredAmount,
         availableBalance: error.availableBalance,
-        rechargeRequired:
-          error.requiredAmount - error.availableBalance,
+        rechargeRequired: roundMoney(
+          error.requiredAmount - error.availableBalance
+        ),
       });
     }
 
@@ -278,12 +459,16 @@ export async function purchaseProduct(req, res) {
   }
 }
 
+// ========================================
+// GET MY PURCHASES
 // GET /api/wallet/my-purchases
+// ========================================
+
 export async function getMyPurchases(req, res) {
   try {
     const purchases = await ProductPurchase.find({
       user: req.user._id,
-      status: "purchased",
+      status: { $ne: "cancelled" },
     })
       .sort({ purchasedAt: -1 })
       .lean();

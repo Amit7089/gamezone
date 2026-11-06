@@ -3,6 +3,27 @@ const API_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000/api"
 ).replace(/\/+$/, "");
 
+function getAuthToken() {
+  const token = sessionStorage.getItem("authToken");
+
+  if (!token) {
+    throw new Error("Please log in first.");
+  }
+
+  return token;
+}
+
+async function handleResponse(response, defaultMessage) {
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.message || defaultMessage);
+  }
+
+  return result;
+}
+
+// POST API
 export async function apiRequest(endpoint, data) {
   const response = await fetch(`${API_URL}${endpoint}`, {
     method: "POST",
@@ -12,57 +33,55 @@ export async function apiRequest(endpoint, data) {
     body: JSON.stringify(data),
   });
 
-  const result = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(result.message || "Request failed");
-  }
-
-  return result;
+  return handleResponse(response, "Request failed");
 }
 
+// Authenticated GET API
+export async function authenticatedGet(endpoint) {
+  const token = getAuthToken();
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  return handleResponse(response, "Request failed");
+}
+
+// Authenticated POST API
+export async function authenticatedPost(endpoint, data = {}) {
+  const token = getAuthToken();
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  return handleResponse(response, "Request failed");
+}
+
+// GET MY PROFILE
 export async function getMyProfile() {
-  const token = sessionStorage.getItem("authToken");
-
-  if (!token) {
-    throw new Error("Please log in first.");
-  }
-
-  const response = await fetch(`${API_URL}/profile/me`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  const result = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(result.message || "Profile fetch failed");
-  }
-
-  return result;
+  return authenticatedGet("/profile/me");
 }
 
+// GET RECHARGE RECORDS
 export async function getRechargeRecords() {
-  const token = sessionStorage.getItem("authToken");
+  return authenticatedGet("/recharge");
+}
 
-  if (!token) {
-    throw new Error("Please log in first.");
-  }
+// GET MY REFERRAL TEAM
+export async function getMyTeam() {
+  return authenticatedGet("/referrals/team");
+}
 
-  const response = await fetch(`${API_URL}/recharge`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  const result = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(result.message || "Recharge records fetch failed");
-  }
-
-  return result;
+// GET MY REFERRAL DETAILS
+export async function getMyReferralDetails() {
+  return authenticatedGet("/referrals/me");
 }
