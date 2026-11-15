@@ -1,9 +1,27 @@
 
 const actions = [
-  { name: "Recharge", icon: "▣", color: "bg-rose-500" },
-  { name: "Withdraw", icon: "⇄", color: "bg-indigo-500" },
-  { name: "Service", icon: "☏", color: "bg-emerald-500" },
-  { name: "Channel", icon: "➤", color: "bg-orange-500" },
+  {
+    name: "Recharge",
+    icon: "▣",
+    color: "bg-rose-500",
+  },
+  {
+    name: "Withdraw",
+    icon: "⇄",
+    color: "bg-indigo-500",
+  },
+  {
+    name: "Service",
+    icon: "☏",
+    color: "bg-emerald-500",
+    link: "https://t.me/Gamezone_costomer",
+  },
+  {
+    name: "Channel",
+    icon: "➤",
+    color: "bg-orange-500",
+    link: "https://t.me/+D59C61A0iV9jOTBl",
+  },
 ];
 
 export default function QuickActions({ onNavigate }) {
@@ -13,7 +31,17 @@ export default function QuickActions({ onNavigate }) {
         <button
           key={action.name}
           type="button"
-          onClick={() => onNavigate(action.name)}
+          onClick={() => {
+            if (action.link) {
+              window.open(
+                action.link,
+                "_blank",
+                "noopener,noreferrer"
+              );
+            } else {
+              onNavigate?.(action.name);
+            }
+          }}
           className="flex min-w-0 flex-col items-center gap-2 rounded-xl px-1 py-3 transition hover:bg-slate-50 active:scale-95"
         >
           <span

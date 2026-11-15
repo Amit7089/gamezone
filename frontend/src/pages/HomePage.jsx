@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useState } from "react";
 
 import HomeBanner from "../components/HomeBanner";
@@ -15,6 +16,10 @@ import MyPurchases from "./MyPurchases";
 const API_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000/api"
 ).replace(/\/+$/, "");
+
+// Product collection
+// First four products are active.
+// Remaining products are locked / coming soon.
 
 const products = [
   {
@@ -57,20 +62,20 @@ const products = [
     color: "from-orange-50 to-amber-100",
   },
   {
-    id: "coming-soon-1",
+    id: 4,
     name: "OnePlus 12",
-    description: "Flagship performance · Upcoming Plan D",
+    description: "Flagship smartphone · Premium Plan D",
     image: "/images/oneplus.png",
-    price: 700,
-    dailyProfit: 150,
+    price: 1000,
+    dailyProfit: 230,
     duration: 180,
-    totalProfit: 27000,
-    comingSoon: true,
-    tag: "Coming Soon",
+    totalProfit: 41400,
+    comingSoon: false,
+    tag: "New Launch",
     color: "from-red-50 to-rose-100",
   },
   {
-    id: "coming-soon-2",
+    id: 5,
     name: "Google Pixel 9",
     description: "AI camera smartphone · Upcoming Plan E",
     image: "/images/pixel.png",
@@ -83,7 +88,7 @@ const products = [
     color: "from-emerald-50 to-teal-100",
   },
   {
-    id: "coming-soon-3",
+    id: 6,
     name: "Vivo X100",
     description: "Premium camera phone · Upcoming Plan F",
     image: "/images/vivo.png",
@@ -94,6 +99,32 @@ const products = [
     comingSoon: true,
     tag: "Coming Soon",
     color: "from-violet-50 to-purple-100",
+  },
+  {
+    id: 7,
+    name: "Premium Smartphone",
+    description: "Premium Collection · Upcoming Plan G",
+    image: "/images/premium.png",
+    price: 5000,
+    dailyProfit: 0,
+    duration: 180,
+    totalProfit: 0,
+    comingSoon: true,
+    tag: "Coming Soon",
+    color: "from-amber-50 to-yellow-100",
+  },
+  {
+    id: 8,
+    name: "Ultimate Smartphone",
+    description: "Ultimate Collection · Upcoming Plan H",
+    image: "/images/ultimate.png",
+    price: 10000,
+    dailyProfit: 0,
+    duration: 180,
+    totalProfit: 0,
+    comingSoon: true,
+    tag: "Coming Soon",
+    color: "from-slate-200 to-indigo-100",
   },
 ];
 
@@ -107,7 +138,7 @@ const accountPages = [
   "Language",
 ];
 
-// Unique-looking reference for identifying a submitted payment.
+// Generate unique order reference
 function generateOrderReference() {
   const random = Math.random()
     .toString(36)
@@ -174,6 +205,7 @@ function HomeProductCard({ product, onBuy }) {
           : "border-slate-200 hover:-translate-y-1 hover:shadow-xl"
       }`}
     >
+      {/* Product Image */}
       <div
         className={`relative flex h-32 items-center justify-center overflow-hidden bg-gradient-to-br sm:h-44 ${product.color}`}
       >
@@ -222,6 +254,7 @@ function HomeProductCard({ product, onBuy }) {
         )}
       </div>
 
+      {/* Product Details */}
       <div className="flex flex-1 flex-col p-2.5 sm:p-4">
         <div className="min-h-[48px] sm:min-h-[58px]">
           <h3 className="line-clamp-2 text-xs font-extrabold leading-5 text-slate-900 sm:text-base sm:leading-6">
@@ -233,9 +266,10 @@ function HomeProductCard({ product, onBuy }) {
           </p>
         </div>
 
+        {/* Price */}
         <div className="mt-2 rounded-xl bg-slate-50 p-2 sm:mt-3 sm:p-3">
           <p className="text-[9px] font-medium text-slate-500 sm:text-xs">
-            Demo Product Price
+            Product Price
           </p>
 
           <p className="mt-0.5 text-base font-extrabold text-[#10145c] sm:text-xl">
@@ -243,9 +277,11 @@ function HomeProductCard({ product, onBuy }) {
           </p>
         </div>
 
+        {/* Product Figures */}
         <div className="mt-2 space-y-1.5 sm:mt-3 sm:space-y-2">
           <div className="flex items-center justify-between gap-1 text-[9px] sm:text-xs">
             <span className="text-slate-500">Daily sample figure</span>
+
             <strong className="text-emerald-700">
               ₹{product.dailyProfit.toLocaleString("en-IN")}
             </strong>
@@ -253,6 +289,7 @@ function HomeProductCard({ product, onBuy }) {
 
           <div className="flex items-center justify-between gap-1 text-[9px] sm:text-xs">
             <span className="text-slate-500">Sample duration</span>
+
             <strong className="text-slate-800">
               {product.duration} Days
             </strong>
@@ -260,12 +297,14 @@ function HomeProductCard({ product, onBuy }) {
 
           <div className="flex items-center justify-between gap-1 border-t border-dashed border-slate-200 pt-1.5 text-[9px] sm:pt-2 sm:text-xs">
             <span className="text-slate-500">Illustrative total</span>
+
             <strong className="text-[#10145c]">
               ₹{product.totalProfit.toLocaleString("en-IN")}
             </strong>
           </div>
         </div>
 
+        {/* Buy / Coming Soon Button */}
         <div className="mt-auto pt-3 sm:pt-4">
           {isComingSoon ? (
             <button
@@ -306,6 +345,7 @@ export default function HomePage({ onLogout }) {
   const [walletError, setWalletError] = useState("");
   const [notice, setNotice] = useState("");
 
+  // Load wallet balance
   const loadWalletBalance = useCallback(async () => {
     setWalletLoading(true);
     setWalletError("");
@@ -333,6 +373,7 @@ export default function HomePage({ onLogout }) {
     loadWalletBalance();
   }, [loadWalletBalance]);
 
+  // Navigation
   function handleNavigate(destination) {
     if (destination === "Log out") {
       sessionStorage.removeItem("authToken");
@@ -370,6 +411,7 @@ export default function HomePage({ onLogout }) {
     setPage(destination);
   }
 
+  // Buy product
   function handleBuy(product) {
     if (!product || product.comingSoon) return;
 
@@ -379,8 +421,7 @@ export default function HomePage({ onLogout }) {
     setPurchaseProduct(product);
   }
 
-  // Normal wallet recharge: amount manually enter hoga,
-  // lekin Order ID automatic generate hogi.
+  // Normal wallet recharge
   function handleRecharge() {
     setPurchaseProduct(null);
     setRechargeAmount(null);
@@ -389,7 +430,7 @@ export default function HomePage({ onLogout }) {
     setPage("Recharge");
   }
 
-  // Product recharge: amount aur Order ID dono automatic.
+  // Product recharge
   function handleProductRecharge() {
     if (!purchaseProduct || purchaseProduct.comingSoon) return;
 
@@ -404,6 +445,7 @@ export default function HomePage({ onLogout }) {
     setPage("Recharge");
   }
 
+  // Confirm purchase
   async function handleConfirm() {
     if (
       !purchaseProduct ||
@@ -499,6 +541,7 @@ export default function HomePage({ onLogout }) {
     }
   }
 
+  // Recharge page
   if (page === "Recharge") {
     return (
       <RechargePage
@@ -516,18 +559,22 @@ export default function HomePage({ onLogout }) {
     );
   }
 
+  // My Products
   if (page === "My Products") {
     return <MyPurchases onNavigate={handleNavigate} />;
   }
 
+  // Team
   if (page === "Team") {
     return <TeamPage onNavigate={handleNavigate} />;
   }
 
+  // My Account
   if (page === "My") {
     return <MyPage onNavigate={handleNavigate} />;
   }
 
+  // Account sub pages
   if (accountPages.includes(page)) {
     return (
       <AccountSubPage
@@ -538,6 +585,7 @@ export default function HomePage({ onLogout }) {
     );
   }
 
+  // Other pages
   if (page !== "Home") {
     return (
       <FeaturePage
@@ -547,6 +595,7 @@ export default function HomePage({ onLogout }) {
     );
   }
 
+  // Home Page
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#f4f6fb] text-slate-900">
       <main className="mx-auto w-full max-w-6xl space-y-5 px-3 pb-28 pt-4 sm:space-y-7 sm:px-6 sm:pt-6">
@@ -592,6 +641,7 @@ export default function HomePage({ onLogout }) {
           </button>
         </section>
 
+        {/* Purchase Notice */}
         {notice && (
           <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm font-medium text-green-800">
             {notice}
@@ -606,6 +656,7 @@ export default function HomePage({ onLogout }) {
           </div>
         )}
 
+        {/* Existing Quick Actions */}
         <QuickActions onNavigate={handleNavigate} />
 
         {/* Products */}
@@ -647,11 +698,13 @@ export default function HomePage({ onLogout }) {
         </div>
       </main>
 
+      {/* Bottom Navigation */}
       <BottomNav
         active="Home"
         onNavigate={handleNavigate}
       />
 
+      {/* Purchase Modal */}
       <PurchaseModal
         product={purchaseProduct}
         walletBalance={walletBalance}
