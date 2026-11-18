@@ -8,7 +8,7 @@ import User from "../models/User.js";
 
 // ========================================
 // PRODUCT CATALOG
-// Backend-controlled prices
+// Backend-controlled product prices
 // ========================================
 
 const PRODUCTS = [
@@ -29,6 +29,36 @@ const PRODUCTS = [
     name: "Redmi Note 13 Pro",
     image: "/images/redmi.png",
     price: 450,
+  },
+  {
+    id: "4",
+    name: "OnePlus 12",
+    image: "/images/oneplus.png",
+    price: 1000,
+  },
+  {
+    id: "5",
+    name: "Google Pixel 9",
+    image: "/images/pixel.png",
+    price: 750,
+  },
+  {
+    id: "6",
+    name: "Vivo X100",
+    image: "/images/vivo.png",
+    price: 650,
+  },
+  {
+    id: "7",
+    name: "Premium Smartphone",
+    image: "/images/premium.png",
+    price: 5000,
+  },
+  {
+    id: "8",
+    name: "Ultimate Smartphone",
+    image: "/images/ultimate.png",
+    price: 10000,
   },
 ];
 
@@ -211,9 +241,7 @@ export async function purchaseProduct(req, res) {
     let result = null;
 
     await session.withTransaction(async () => {
-      // ========================================
       // DUPLICATE REQUEST PROTECTION
-      // ========================================
 
       const existing = await ProductPurchase.findOne({
         user: req.user._id,
@@ -237,9 +265,7 @@ export async function purchaseProduct(req, res) {
         return;
       }
 
-      // ========================================
       // CHECK BUYER BALANCE
-      // ========================================
 
       const availableBalance = await calculateAvailableBalance(
         req.user._id,
@@ -256,9 +282,7 @@ export async function purchaseProduct(req, res) {
         throw error;
       }
 
-      // ========================================
       // FIND BUYER REFERRER
-      // ========================================
 
       const buyer = await User.findById(req.user._id)
         .select("referredBy")
@@ -287,9 +311,7 @@ export async function purchaseProduct(req, res) {
         }
       }
 
-      // ========================================
       // CREATE PURCHASE RECORD
-      // ========================================
 
       const referralCommission = {
         referrer: referrer ? referrer._id : null,
@@ -320,9 +342,7 @@ export async function purchaseProduct(req, res) {
         { session }
       );
 
-      // ========================================
       // DEBIT BUYER WALLET
-      // ========================================
 
       await WalletTransaction.create(
         [
@@ -339,14 +359,11 @@ export async function purchaseProduct(req, res) {
         { session }
       );
 
-      // ========================================
       // CREDIT REFERRER 4% COMMISSION
-      // ========================================
 
       let commissionCredited = false;
 
       if (referrer && commissionAmount > 0) {
-        // Ensure referrer wallet exists.
         await Wallet.findOneAndUpdate(
           { user: referrer._id },
           {
@@ -364,7 +381,6 @@ export async function purchaseProduct(req, res) {
           }
         );
 
-        // Create referral income transaction.
         const [commissionTransaction] =
           await WalletTransaction.create(
             [
@@ -381,21 +397,17 @@ export async function purchaseProduct(req, res) {
             { session }
           );
 
-        // Save commission transaction reference.
         purchase.referralCommission.walletTransactionId =
           commissionTransaction._id;
 
         await purchase.save({ session });
 
-        // Update referrer's wallet from ledger.
         await syncWallet(referrer._id, session);
 
         commissionCredited = true;
       }
 
-      // ========================================
       // SYNC BUYER WALLET
-      // ========================================
 
       await syncWallet(req.user._id, session);
 
@@ -428,6 +440,7 @@ export async function purchaseProduct(req, res) {
 
       referralCommission: result.commission,
     });
+
   } catch (error) {
     if (error.statusCode === 400) {
       return res.status(400).json({
@@ -454,6 +467,7 @@ export async function purchaseProduct(req, res) {
       success: false,
       message: "Product purchase nahi ho paaya.",
     });
+
   } finally {
     await session.endSession();
   }
@@ -477,6 +491,7 @@ export async function getMyPurchases(req, res) {
       success: true,
       purchases,
     });
+
   } catch (error) {
     console.error("getMyPurchases:", error);
 
